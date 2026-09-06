@@ -2,7 +2,13 @@ import os
 import sqlite3
 import tempfile
 from fastapi.testclient import TestClient
-from app.api import __init__ as api
+try:
+    # Prefer importing the FastAPI app exposed by app.api
+    from app.api import app as api
+except Exception:
+    # Fallback: import the __init__ module to avoid import-time failures in CI environments
+    from importlib import import_module
+    api = import_module('app.api').__dict__.get('app')  # type: ignore
 
 import pytest
 
