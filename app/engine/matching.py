@@ -112,6 +112,19 @@ def match_one(
                 amount_delta=delta_amount
             )
 
+    # Fix: ensure the exception_type reflects the winner's exact delta
+    if best_match is not None:
+        best_match.exception_type = _exc_value(classify(
+            matched=best_match.confidence >= 0.60,
+            amount_delta=best_match.amount_delta,
+            date_delta_days=best_delta,
+            is_duplicate=False,
+            merchant_id=source.merchant_id,
+            candidate_count=len(targets),
+            amount_tolerance=amount_tolerance,
+            date_tolerance_days=date_tolerance_days
+        ))
+
     return best_match
 
 

@@ -1,8 +1,7 @@
-import sys
-import os
-import pytest
-
+import sys, os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+import pytest
 
 from app.policy.engine import load_policy, decide
 
@@ -51,3 +50,10 @@ def test_policy_version_echoed_back():
     policy = load_policy()
     result = decide(confidence=0.5, amount=500, exception_type=None, policy=policy)
     assert result['policy_version'] == 'v1'
+
+
+def test_split_payment_blocked_requires_human_review():
+    policy = load_policy()
+    result = decide(confidence=0.90, amount=1000, exception_type='split_payment', policy=policy)
+    assert result['action'] == 'human_review'
+    assert 'blocked exception type: split_payment' in result['reason']
