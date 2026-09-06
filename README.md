@@ -36,10 +36,20 @@ goal → picks a tool → registry validates → executes → observation
 | `resolve_case` | Do the job — **refuses anything policy blocks** |
 | `ask_human` | Ask, instead of guessing |
 | `escalate_to_human` | Hand off what needs a person |
+| `draft_vendor_email` / `draft_all_gst_chasers` | Chase suppliers whose filings put credit at risk |
 
 A failed or refused tool call does not end the run — it becomes an observation the agent reacts to.
 
 `POST /agent/run` drives it; `GET /agent/last` returns the full step-by-step trace.
+
+**Nothing is computed until the agent acts.** Reads only report: a fresh server returns no cases, no
+GST and no close until a run happens. The dashboard opens empty on purpose, so every figure on it
+exists because the agent did something.
+
+**Drafting, not sending.** Chaser emails are queued in an outbox as `pending` and a human presses
+send. The agent can prepare an outward-facing action; it cannot perform one. `POST /gst/draft-all`
+is a manual override for when the agent chooses not to draft — it calls the same code the tool
+does, so you are overriding *whether* it happens, not *how*.
 
 ---
 
@@ -82,13 +92,16 @@ The interesting engineering is in what happens when matching is *uncertain*:
 
 ```bash
 pip install -r requirements.txt
-uvicorn app.main:app --reload
-# open http://127.0.0.1:8000
+uvicorn app.main:app
+# open http://127.0.0.1:8000  →  press "Run the whole close"
 ```
 
-The demo dataset generates itself on first run. No database to provision, no auth to configure —
-the server binds to localhost and `actor_id` comes from an `X-Actor-Id` header purely so the audit
-log has an author.
+The page opens empty. Press a button and the agent goes to work; the numbers appear because it did
+something. The demo dataset generates itself on first run — no database to provision, no auth to
+configure. The server binds to localhost and `actor_id` comes from an `X-Actor-Id` header purely so
+the audit log has an author.
+
+To make it forget everything it has learned, stop the server and `rm -rf data/`.
 
 Run the evaluation harness:
 
