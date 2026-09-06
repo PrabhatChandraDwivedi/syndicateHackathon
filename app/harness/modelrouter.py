@@ -10,10 +10,11 @@ class ProviderConfig:
     base_url: Optional[str] = None
     context_limit: int = 32768
     token_param: str = 'max_tokens'
+    min_output_tokens: int = 0
 
 PROVIDERS = {
-    'openai': ProviderConfig('openai', 'gpt-5-nano', 'OPENAI_API_KEY', None, 400000, token_param='max_completion_tokens'),
-    'tensormux': ProviderConfig('tensormux', 'glm-4-7-flash', 'TENSORMUX_API_KEY', 'https://api.tensormux.com/v1', 32768, token_param='max_tokens'),
+    'openai': ProviderConfig('openai', 'gpt-5-nano', 'OPENAI_API_KEY', None, 400000, token_param='max_completion_tokens', min_output_tokens=4000),
+    'tensormux': ProviderConfig('tensormux', 'glm-4-7-flash', 'TENSORMUX_API_KEY', 'https://api.tensormux.com/v1', 32768, token_param='max_tokens', min_output_tokens=0),
 }
 
 DEFAULT_ORDER = ['tensormux', 'openai']
@@ -43,11 +44,12 @@ class ModelRouter:
             cfg = PROVIDERS[name]
             client = self._make_client(cfg)
             try:
+                budget = max(max_tokens, cfg.min_output_tokens)
                 kwargs = {
                     'model': cfg.model,
                     'messages': [{'role': 'user', 'content': prompt}]
                 }
-                kwargs[cfg.token_param] = max_tokens
+                kwargs[cfg.token_param] = budget
                 resp = client.chat.completions.create(**kwargs)
                 text = None
                 try:
@@ -55,7 +57,15 @@ class ModelRouter:
                 except (AttributeError, IndexError, TypeError):
                     text = None
                 if not isinstance(text, str) or text.strip() == '':
-                    errors.append(f'{name}: empty completion')
+                    fr = None
+                    try:
+                        fr = resp.choices[0].message.finish_reason
+                    except Exception:
+                        fr = None
+                    if isinstance(fr, str):
+                        errors.append(f'{name}: empty completion (finish_reason={fr})')
+                    else:
+                        errors.append(f'{name}: empty completion')
                     continue
                 return {
                     'provider': cfg.name,

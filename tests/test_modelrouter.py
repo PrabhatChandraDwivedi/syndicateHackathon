@@ -1,71 +1,91 @@
 import sys, os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+from app.harness import modelrouter
 from app.harness.modelrouter import PROVIDERS, ModelRouter
 
-def test_token_param_values():
-    assert PROVIDERS['openai'].token_param == 'max_completion_tokens'
-    assert PROVIDERS['tensormux'].token_param == 'max_tokens'
+def test_min_output_tokens_defaults_and_values():
+    assert PROVIDERS['openai'].min_output_tokens == 4000
+    assert PROVIDERS['tensormux'].min_output_tokens == 0
 
-def test_complete_uses_correct_param_names_and_fallback():
-    os.environ['OPENAI_API_KEY'] = 'dummy'
-    os.environ['TENSORMUX_API_KEY'] = 'dummy'
+class FakeMessage:
+    def __init__(self, content, finish_reason=None):
+        self.content = content
+        self.finish_reason = finish_reason
 
-    records = []
+class FakeChoice:
+    def __init__(self, message):
+        self.message = message
 
-    class FakeClient:
-        def __init__(self, cfg, recs):
-            self.cfg = cfg
-            self._recs = recs
-            from types import SimpleNamespace
-            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+class FakeResp:
+    def __init__(self, content, finish_reason=None):
+        self.choices = [FakeChoice(FakeMessage(content, finish_reason))]
 
-        def _create(self, **kwargs):
-            # Record the kwargs used for this provider call
-            self._recs.append((self.cfg.name, dict(kwargs)))
-            # Simulate failure for tensormux to exercise the fallback path
-            if self.cfg.name == 'tensormux':
-                raise RuntimeError("tensormux failure")
-            # Simulate a successful OpenAI response
-            class Message: pass
-            msg = Message(); msg.content = f"{self.cfg.name}-ok"
-            class C: pass
-            c = C(); c.message = msg
-            class R: pass
-            r = R(); r.choices = [c]
-            return r
+class RecordingClientFactory:
+    def __init__(self):
+        self.calls = []  # list of dicts with 'provider' and 'kwargs'
 
-    class FakeFactory:
-        def __init__(self, recs):
-            self.recs = recs
-        def __call__(self, cfg):
-            return FakeClient(cfg, self.recs)
+    def __call__(self, cfg):
+        return FakeClient(cfg, self)
 
-    factory = FakeFactory(records)
-    router = ModelRouter(order=None, client_factory=factory)
+class FakeClient:
+    def __init__(self, cfg, factory):
+        self.cfg = cfg
+        self.factory = factory
+        self.chat = type('Chat', (), {'completions': type('Completions', (), {'create': self.create})})()
 
-    result = router.complete("hello world", max_tokens=1234)
+    def create(self, **kwargs):
+        # Record the call
+        self.factory.calls.append({'provider': self.cfg.name, 'kwargs': dict(kwargs), 'model': self.cfg.model})
+        # Simulate responses per provider
+        if self.cfg.name == 'tensormux':
+            # Empty completion to simulate fallback
+            return FakeResp('', finish_reason='length')
+        else:
+            # Non-empty completion
+            return FakeResp('Stable Text')
 
-    # OpenAI should be used after tensormux fails
+def test_complete_floor_and_fallback():
+    factory = RecordingClientFactory()
+    router = ModelRouter(client_factory=factory)
+    result = router.complete("Hello", max_tokens=100)
+
     assert result['provider'] == 'openai'
     assert result['model'] == PROVIDERS['openai'].model
-    assert result['text'] == 'openai-ok'
-    assert result['attempts'] == 2  # tensormux (failed) -> openai (succeeded)
+    assert result['text'] == 'Stable Text'
+    assert result['attempts'] == 2
 
-    # Check the kwargs per provider to ensure correct token_param usage
-    assert len(records) == 2
+    calls = factory.calls
+    assert len(calls) == 2
+    # First provider tensormux receives budget max(100, min_output_tokens=0) = 100
+    first = calls[0]
+    assert first['provider'] == 'tensormux'
+    assert 'max_tokens' in first['kwargs']
+    assert first['kwargs']['max_tokens'] == 100
+    # Second provider openai receives budget max(100, min_output_tokens=4000) = 4000
+    second = calls[1]
+    assert second['provider'] == 'openai'
+    assert 'max_completion_tokens' in second['kwargs']
+    assert second['kwargs']['max_completion_tokens'] == 4000
 
-    tensormux_call = records[0]
-    openai_call = records[1]
+def test_complete_budget_above_floor_results_in_openai_budget():
+    factory = RecordingClientFactory()
+    router = ModelRouter(client_factory=factory)
+    result = router.complete("Hello", max_tokens=9000)
 
-    assert tensormux_call[0] == 'tensormux'
-    tensormux_kwargs = tensormux_call[1]
-    assert 'max_tokens' in tensormux_kwargs
-    assert 'max_completion_tokens' not in tensormux_kwargs
-    assert tensormux_kwargs['max_tokens'] == 1234
+    assert result['provider'] == 'openai'
+    assert result['model'] == PROVIDERS['openai'].model
+    assert result['text'] == 'Stable Text'
+    assert result['attempts'] == 2
 
-    assert openai_call[0] == 'openai'
-    openai_kwargs = openai_call[1]
-    assert 'max_completion_tokens' in openai_kwargs
-    assert 'max_tokens' not in openai_kwargs
-    assert openai_kwargs['max_completion_tokens'] == 1234
+    calls = factory.calls
+    # tensormux called with budget 9000 due to floor
+    assert len(calls) == 2
+    first = calls[0]
+    second = calls[1]
+    assert first['provider'] == 'tensormux'
+    assert 'max_tokens' in first['kwargs']
+    assert first['kwargs']['max_tokens'] == 9000
+    assert second['provider'] == 'openai'
+    assert 'max_completion_tokens' in second['kwargs']
+    assert second['kwargs']['max_completion_tokens'] == 9000
