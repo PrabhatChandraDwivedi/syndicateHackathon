@@ -634,21 +634,21 @@ const CONTEXT =
   'cases until you run the reconciliation, so run it first if you need cases to review.';
 
 const GOALS = {
-  full: {steps:8, label:'Run the whole close', goal:
+  full: {steps:16, label:'Run the whole close', goal:
     'You own the month-end close. ' + CONTEXT + ' Run the reconciliation first, then check GST ' +
     'against GSTR-2B and draft chasers for the suppliers at fault, then check the three-way month ' +
     'close. Then review the open cases: consult the learned rules and the policy, resolve what is ' +
     'safe to resolve, and escalate anything that needs a person.'},
-  cash: {steps:6, label:'Match card to bank', goal:
+  cash: {steps:10, label:'Match card to bank', goal:
     'Reconcile the corporate card feed against the bank feed. ' + CONTEXT + ' Run the ' +
     'reconciliation first, then review the open cases: check the learned rules and the policy, ' +
     'resolve what is safe, and escalate anything you cannot decide. Do not run the GST or ' +
     'month-close checks.'},
-  gst: {steps:5, label:'Check GST', goal:
+  gst: {steps:8, label:'Check GST', goal:
     'Check the purchase register against GSTR-2B. ' + CONTEXT + ' Run the GST check first, report ' +
     'what is matched and how much input tax credit is at risk, then use draft_all_gst_chasers to ' +
     'draft the chaser emails. Do not run the cash reconciliation or the month-close check.'},
-  close: {steps:5, label:'Tie out the month', goal:
+  close: {steps:8, label:'Tie out the month', goal:
     'Check the three-way month close: every order from operations through the invoice ledger to ' +
     'the bank. ' + CONTEXT + ' Run the close check first, then report what is closed, what is ' +
     'partial, what is orphaned, and any bank credit nothing explains. Do not run the cash ' +

@@ -14,6 +14,7 @@ from app.pipeline import run_pipeline
 from app.harness.evidence import build_pack
 from app.memory.rules import RuleStore
 from app.harness.audit import AuditWriter
+from app.harness.notify import Outbox
 from app.harness.tracing import trace_id
 
 from app.engine.gst import reconcile_gst
@@ -116,6 +117,25 @@ class AgentRunRequest(BaseModel):
 
 # Internal helpers for agent integration
 
+def get_outbox():
+    """The process-wide outbox, created on first use.
+
+    It used to be built only by /admin/reset, so on a fresh server it was None and
+    the agent's drafting tools reported 'no outbox configured' -- it would do the
+    GST check, decide to chase the suppliers, and have nowhere to put the drafts.
+    """
+    if STATE.get('outbox') is None:
+        try:
+            path = os.environ.get('OUTBOX_PATH', './data/outbox.db')
+            parent = os.path.dirname(path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            STATE['outbox'] = Outbox(path)
+        except Exception:  # noqa: BLE001 - drafting degrades, the run continues
+            STATE['outbox'] = None
+    return STATE['outbox']
+
+
 def _build_agent_registry(run_fn, gst_fn, close_fn):
     from app.agent.tools_recon import build_registry
     from app.policy.engine import load_policy
@@ -130,7 +150,7 @@ def _build_agent_registry(run_fn, gst_fn, close_fn):
             run_fn=run_fn,
             gst_fn=gst_fn,
             close_fn=close_fn,
-            outbox=STATE.get('outbox')
+            outbox=get_outbox()
         )
     else:
         return build_registry(
@@ -701,7 +721,7 @@ async def gst_draft_all():
         return {'ok': False, 'error': 'no GST check has run yet', 'drafted': 0, 'drafts': []}
     try:
         from app.agent.vendor_email import drafts_from_gst
-        result = drafts_from_gst(gst, STATE.get('outbox'))
+        result = drafts_from_gst(gst, get_outbox())
         return {'ok': True, **result}
     except Exception as e:  # noqa: BLE001
         return {'ok': False, 'error': str(e), 'drafted': 0, 'drafts': []}
@@ -725,7 +745,7 @@ async def gst_draft_one(invoice_number: str):
                     'error': 'this finding is our own bookkeeping gap, not something to chase the supplier about'}
         taxable, tax = _amounts(exc)
         return draft_and_enqueue(
-            STATE.get('outbox'), exc.get('invoice_number', ''), exc.get('supplier_gstin', ''),
+            get_outbox(), exc.get('invoice_number', ''), exc.get('supplier_gstin', ''),
             CHASEABLE[etype], taxable_value=taxable, tax_at_risk=tax, exception_type=etype)
     except Exception as e:  # noqa: BLE001
         return {'ok': False, 'error': str(e)}
@@ -734,7 +754,7 @@ async def gst_draft_one(invoice_number: str):
 @app.get("/outbox")
 async def outbox_status():
     try:
-        outbox = STATE.get('outbox')
+        outbox = get_outbox()
         if outbox is None:
             return {'pending': [], 'stats': {}}
         pending = outbox.pending(limit=50)
@@ -747,7 +767,7 @@ async def outbox_status():
 @app.post("/outbox/{msg_id}/send")
 async def outbox_send(msg_id: str):
     try:
-        outbox = STATE.get('outbox')
+        outbox = get_outbox()
         if outbox is None:
             return {'msg_id': msg_id, 'status': 'not_initialized'}
         pending = outbox.pending(limit=1000)
@@ -763,7 +783,7 @@ async def outbox_send(msg_id: str):
 @app.post("/outbox/send-all")
 async def outbox_send_all():
     try:
-        outbox = STATE.get('outbox')
+        outbox = get_outbox()
         if outbox is None:
             return {'attempted': 0, 'sent': 0, 'failed': 0}
 
