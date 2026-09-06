@@ -5,10 +5,10 @@
 
 **Status:** Final, build-ready. Supersedes `docs/Track-2-Original-Architecture.md` (kept for reference).
 
-> ### Built by ~58 parallel agents under Agent Orchestrator
-> Every feature in this document ships. **§17 is the task division** — each agent gets one clearly
-> bounded unit of work with named deliverables and named dependencies. AO handles orchestration,
-> merging, and CI.
+> ### Built by a 69-agent orchestration tree under Agent Orchestrator
+> Every feature in this document ships. **§17 is the orchestration hierarchy and task division** —
+> one Main Orchestrator, eleven Sub-Orchestrators, 57 worker agents. Each worker owns a bounded
+> set of files with named deliverables and named dependencies.
 
 ---
 
@@ -34,7 +34,7 @@ Supabase stack with Supabase Auth, RBAC, Upstash Redis, and Vercel. Both are tri
 | Full GL replacement, tax filing engine, payroll | Out of Track 2's demonstrable scope. |
 | **Replay harness** | The hash-chained append-only audit log already answers "why did the system do this?" Deterministic re-execution is a production feature. |
 
-Everything else from the original spec **ships**. See §17 for how the work divides across agents.
+Everything else from the original spec **ships**. See §17 for how the work divides across the orchestration tree.
 
 ### Added — the harness layer
 
@@ -142,7 +142,7 @@ flowchart TB
 ## 3. Canonical data model
 
 **This is the single most important artifact in the build.** Every agent codes against it, so it is
-produced first (§17, Group 0) and treated as fixed thereafter. Fields marked **new** are harness additions to the original spec.
+produced first by the Main Orchestrator (§17) and treated as fixed thereafter. Fields marked **new** are harness additions to the original spec.
 
 ```python
 FinancialTransaction:
@@ -203,7 +203,7 @@ RunRecord:                                # new: run history + eval anchor
 
 ## 4. The harness layer
 
-Eleven harnesses. Each is a module under `app/harness/`, each is owned by exactly one agent (§17),
+Eleven harnesses. Each is a module under `app/harness/`, each is owned by exactly one worker agent (§17),
 each is independently testable, and each produces something a judge can see.
 
 ### H1 — Ingestion harness
@@ -286,8 +286,8 @@ leaves the machine, with the Slack sink shown as configured-but-gated.
 
 ## 5. AO (Agent Orchestrator) — mandatory, 25% of score
 
-AO is not a runtime dependency of ReconcileOS. It is the **development harness** — and with ~45
-agents building this system in 10 hours, it is also the only reason the build is feasible at all.
+AO is not a runtime dependency of ReconcileOS. It is the **development harness** — and with a 69-agent
+tree building this system in 10 hours, it is also the only reason the build is feasible at all.
 That makes AO usage genuinely load-bearing here rather than a checkbox, which is exactly the story
 the judges are looking for.
 
@@ -296,17 +296,17 @@ the judges are looking for.
   - `.ao/orchestrator-rules.md` — task decomposition, boundary enforcement, dedup, dependency detection, evidence-before-integration, *reject fabricated eval numbers*, Track-2 scope compliance.
   - `.ao/worker-rules.md` — **file-ownership boundaries are absolute**; a worker that needs a file it doesn't own raises a dependency instead of editing it. Mandatory tests per unit. No credentials in task descriptions.
   - `.ao/tasks/` — one file per task from §17's breakdown, so the decomposition itself is in git history.
-- **~45 workers in isolated worktrees, one PR each**, fanned out in waves (§17).
+- **57 worker agents in isolated worktrees, one PR each**, dispatched through eleven Sub-Orchestrators (§17).
 - **AO handles CI fixes and merge conflicts** on worker PRs — with disjoint file ownership there should be almost none, which is the whole design.
 - **Orchestrator gates merges** on: tests pass, contract unchanged, eval scorecard not regressed, audit invariants hold.
 
 ### Evidence we produce for the judges
 | Artifact | Where |
 |---|---|
-| `.ao/` rules + ~45 task files | repo root, committed first |
+| `.ao/` rules + 57 task files | repo root, committed first |
 | `docs/AO-SESSIONS.md` — session count, task→PR→commit table, dashboard screenshots | repo |
 | Commit trailer `AO-Session: <id>` on worker commits | git log |
-| ~45 PRs / branches showing genuine parallel execution | GitHub |
+| 57 PRs / branches showing genuine parallel execution | GitHub |
 | ~20s of the demo video showing the live AO dashboard mid-run | demo |
 
 > **Hold the line:** if a module was written outside AO, say so. Fabricated AO evidence is a
@@ -347,28 +347,44 @@ this many agents we can run it more than once.
 
 ---
 
-## 7. TensorMux — inference routing & cost metering
+## 7. TensorMux — inference, routing & cost metering
 
-OpenAI-compatible endpoint, so it drops in behind one base URL:
+Inference partner for the hackathon. No credit card and no personal model key required.
+
+**Setup:** sign in at `app.tensormux.com` with Google or GitHub, copy the API key (starts with
+`tmx_`). Each key is activated with **50 million tokens** — effectively unlimited for this build.
+Top-ups available via `syndicate-help` on Discord.
+
+```
+Base URL: https://api.tensormux.com/v1
+Model:    glm-4-7-flash
+```
+
+OpenAI-compatible, so it drops in behind one base URL:
 
 ```python
-client = OpenAI(base_url=os.environ["TENSORMUX_BASE_URL"],
-                api_key=os.environ["TENSORMUX_API_KEY"])
+client = OpenAI(base_url=os.environ["TENSORMUX_BASE_URL"],   # https://api.tensormux.com/v1
+                api_key=os.environ["TENSORMUX_API_KEY"])     # tmx_...
 ```
 
 ### Routing policy (`config/models.yaml`)
 
-| Task | Tier | Why |
-|---|---|---|
-| Merchant descriptor disambiguation | small/fast model | High volume, low stakes, shortlist already constrained |
-| Exception classification into §9 taxonomy | small/fast model | Closed label set |
-| Cash-application shortlist selection | reasoning model | Genuinely ambiguous, materially consequential |
-| Vendor-correction email drafting | reasoning model | Human-facing text |
-| Close commentary from validated facts | reasoning model | Narrative over already-verified numbers |
+TensorMux exposes **a single model** for the hackathon, so the router does not split traffic across
+model tiers today. It still exists, and still earns its place, because it owns three things:
 
-- **Fallback chain** — if the primary model errors or times out, route to the secondary; if both fail, the case degrades to `queued`. The pipeline never dies on an LLM outage.
-- **Cost metering** — per-call tokens and cost land on the case (`token_cost_usd`), aggregated into the KPI **"cost per exception resolved."** That is a real, defensible efficiency number, and it drops between Run 1 and Run 2 as learned rules displace LLM calls.
-- **Deterministic-first is a cost strategy, not just an accuracy one.** The dashboard shows `% of cases resolved with zero LLM calls`.
+| Concern | What the router does |
+|---|---|
+| **Task profiles** | Each call site declares a profile (`classify`, `disambiguate`, `select`, `draft`, `narrate`) carrying its own temperature, max-tokens, timeout and retry budget. Cheap closed-label tasks get tight budgets; the cash-application shortlist gets a generous one |
+| **Fallback chain** | Primary `glm-4-7-flash` → secondary provider if configured → **degrade the case to `queued`**. The pipeline never dies on an LLM outage, which is exactly what the chaos harness (H7) injects |
+| **Cost metering** | Per-call tokens and cost land on the case (`token_cost_usd`), aggregated into the KPI **"cost per exception resolved"** |
+
+The profile abstraction means a second model can be added by editing `models.yaml` alone — no call
+site changes. That is the honest version of "routing" given one available model, and it is the
+version that ships.
+
+- **Deterministic-first is a cost strategy, not just an accuracy one.** The dashboard shows
+  `% of cases resolved with zero LLM calls`, and that number rises between Run 1 and Run 2 as
+  learned rules displace model calls.
 
 ---
 
@@ -540,8 +556,8 @@ POST /admin/reset              reload seed data (demo takes)
 `X-Actor-Id` names the human on audit events. Absent → `finance_user_01`. That is the entire
 identity story, by design.
 
-**This contract is produced first** (§17, Group 0) so frontend and backend agents build against a
-fixed interface.
+**This contract is produced first by the Main Orchestrator** (§17) so frontend and backend agents
+build against a fixed interface.
 
 ### UI — 5 screens
 1. **Close Readiness** — overall %, per-workflow bars, blockers, "today's high-impact actions"
@@ -596,7 +612,7 @@ The narrative is **one hero case + one learning proof + one reliability proof.**
 | 1:00–1:25 | **GST exception** | INV-101: ERP ₹1,800 vs GSTR-2B ₹1,600 → `TAX_AMOUNT_MISMATCH`, 0.99. Agent drafts the vendor correction email. Human approves *sending* — showing the reasoning/action permission split. |
 | 1:25–1:50 | **Learning + Dodo** | Fresh card statement with `SBX*COFFEE 0811` → auto-resolves from the rule learned earlier, **zero LLM calls**. A live Dodo test payment fires a webhook and lands in the queue mid-demo. |
 | 1:50–2:15 | **Reliability** | Hit `--chaos`: re-upload a file (no-op), stale GSTR-2B (blocked, not guessed), forced LLM 500 (falls back, then queues). **Zero duplicate actions.** Then `GET /audit/verify` → chain OK. |
-| 2:15–2:40 | **Measurable result + AO** | Scorecard: exception queue **−53%**, unsafe auto-resolutions **0**, cost/case **−41%**, readiness **71% → 89%**. Cut to the **AO dashboard** showing ~45 parallel workers and the session count. |
+| 2:15–2:40 | **Measurable result + AO** | Scorecard: exception queue **−53%**, unsafe auto-resolutions **0**, cost/case **−41%**, readiness **71% → 89%**. Cut to the **AO dashboard** showing the orchestration tree and the session count. |
 | 2:40–3:00 | **Close** | *"The human still owns judgment. The agent owns the investigation, the evidence, the memory, and the proof."* Neatlogs trace link clicked from an audit row. |
 
 Every number spoken in the video comes from `evals/reports/scorecard.md`, which is committed and reproducible.
@@ -643,10 +659,9 @@ syndicateHackathon/
 
 ```bash
 NEATLOGS_API_KEY=
-TENSORMUX_BASE_URL=
-TENSORMUX_API_KEY=
-TENSORMUX_MODEL_FAST=
-TENSORMUX_MODEL_REASONING=
+TENSORMUX_BASE_URL=https://api.tensormux.com/v1
+TENSORMUX_API_KEY=            # tmx_...
+TENSORMUX_MODEL=glm-4-7-flash
 DODO_API_KEY=
 DODO_WEBHOOK_SECRET=
 DODO_MODE=test          # server refuses to start on "live"
@@ -658,33 +673,73 @@ No auth variables. There is nothing to log into.
 
 ---
 
-## 17. Task division — ~58 agents
+## 17. Orchestration hierarchy and task division
 
-Every feature in this document is built. Work is divided into twelve groups. Each agent below gets
-**one bounded unit of work**, the **exact files it owns**, and its **dependencies**. Groups are
-listed in dependency order — Group 0 produces the interfaces everything else codes against, so it
-goes first; Groups 1–7 are fully independent of each other and can all run at once.
+Every feature in this document is built. The build is organised as a **two-tier orchestration tree**:
+one **Main Orchestrator** that owns the system, **eleven Sub-Orchestrators** that each own one
+domain, and **57 worker agents** that each own a bounded set of files.
 
-Each task file lives in `.ao/tasks/<AGENT-ID>.md` so the decomposition itself is in git history.
+```mermaid
+flowchart TB
+    MO["<b>MO — Main Orchestrator</b><br/>owns contract · merge queue · cross-cutting calls"]
+
+    MO --> SO1["SO-1<br/>Ingestion"]
+    MO --> SO2["SO-2<br/>Platform Harness"]
+    MO --> SO3["SO-3<br/>Matching Engine"]
+    MO --> SO4["SO-4<br/>GST"]
+    MO --> SO5["SO-5<br/>Close"]
+    MO --> SO6["SO-6<br/>Policy &amp; Memory"]
+    MO --> SO7["SO-7<br/>Pipeline &amp; API"]
+    MO --> SO8["SO-8<br/>Interface"]
+    MO --> SO9["SO-9<br/>Sponsor Integrations"]
+    MO --> SO10["SO-10<br/>Data &amp; Evaluation"]
+    MO --> SO11["SO-11<br/>QA &amp; Submission"]
+
+    SO1 --> W1["A01–A07<br/>7 workers"]
+    SO2 --> W2["A08–A15<br/>8 workers"]
+    SO3 --> W3["A16–A23<br/>8 workers"]
+    SO4 --> W4["A24–A26<br/>3 workers"]
+    SO5 --> W5["A27–A30<br/>4 workers"]
+    SO6 --> W6["A31–A34<br/>4 workers"]
+    SO7 --> W7["A35–A39<br/>5 workers"]
+    SO8 --> W8["A40–A44<br/>5 workers"]
+    SO9 --> W9["A45–A49<br/>5 workers"]
+    SO10 --> W10["A50–A53<br/>4 workers"]
+    SO11 --> W11["A54–A57<br/>4 workers"]
+```
+
+### 17.1 What each tier does
+
+**MO — Main Orchestrator** *(1 agent)*
+Owns the system, not any single module. Its responsibilities:
+- Produces **A00, the foundation task**, before anything else is dispatched — the SQLite DDL, the
+  Pydantic models (§3), the `AuditEvent` hash-chain writer, the OpenAPI stub for every route in §12,
+  `.ao/orchestrator-rules.md`, `.ao/worker-rules.md`, `.env.example`, and the pytest skeleton.
+  This is the contract all eleven sub-trees code against.
+- Dispatches the eleven sub-orchestrators and holds the dependency graph between them.
+- Owns the **merge queue**: nothing lands on `main` without passing through MO.
+- Arbitrates any cross-domain conflict — two sub-orchestrators wanting the same interface, a
+  proposed change to §3 or §12, a disagreement about exception-type ownership.
+- Enforces the **global invariants** (§17.4). It writes no feature code.
+
+**SO — Sub-Orchestrator** *(11 agents)*
+Each owns one domain and the workers inside it:
+- Decomposes its domain into the worker tasks listed below and writes `.ao/tasks/<AGENT-ID>.md`.
+- Reviews its workers' PRs **before** they reach MO — a sub-orchestrator is the first quality gate.
+- Verifies each worker shipped tests and stayed inside its file boundary.
+- Integrates its own domain: the sub-tree must be internally green before MO sees it.
+- Escalates to MO rather than editing outside its domain.
+
+**Worker agents** *(57 agents)*
+One bounded unit of work, an explicit file list, unit tests, one PR. Never edits outside its files.
 
 ---
 
-### Group 0 — Foundation
+### 17.2 The eleven sub-trees
 
-Produces the contracts every other agent builds against.
-
-| ID | Owns | Deliverable |
-|---|---|---|
-| **A00** | `.ao/`, `app/models/`, `app/db/`, `app/main.py`, `.env.example`, CI config | `.ao/orchestrator-rules.md` + `.ao/worker-rules.md`; SQLite DDL for every table in §3; Pydantic models; `AuditEvent` hash-chain writer; OpenAPI stub for every route in §12; `neatlogs.init()` at the top of `main.py`; pytest skeleton |
-
-**Depends on:** nothing. **Everything else depends on this.**
-
----
-
-### Group 1 — Source adapters (6 agents)
-
-**Depends on:** A00 models. Each adapter maps one source format to canonical records and ships a
-column-mapping config, so the engine never sees a raw CSV column name.
+#### SO-1 · Ingestion — 7 workers
+**Owns:** `app/adapters/`, `config/adapters/`, `app/harness/ingestion.py`
+**Depends on:** MO contract (models)
 
 | ID | Owns | Deliverable |
 |---|---|---|
@@ -694,16 +749,14 @@ column-mapping config, so the engine never sees a raw CSV column name.
 | A04 | `app/adapters/purchase_register.py`, `config/adapters/purchase.yaml` | Purchase register CSV → `Invoice(purchase)` |
 | A05 | `app/adapters/gstr2b.py`, `config/adapters/gstr2b.yaml` | GSTR-2B JSON/CSV → `GSTRecord` |
 | A06 | `app/adapters/ops_export.py`, `config/adapters/ops.yaml` | Ops/sales export → `OpsRecord` |
+| A07 | `app/harness/ingestion.py` | **H1** — file fingerprinting, column sniffing, `as_of` freshness stamps, row quarantine with reasons |
 
----
-
-### Group 2 — Harness layer (9 agents)
-
-**Depends on:** A00 models. One agent per harness from §4.
+#### SO-2 · Platform Harness — 8 workers
+**Owns:** `app/harness/` (except ingestion)
+**Depends on:** MO contract (models, audit writer)
 
 | ID | Owns | Deliverable |
 |---|---|---|
-| A07 | `app/harness/ingestion.py` | **H1** — file fingerprinting, column sniffing, `as_of` freshness stamps, row quarantine with reasons |
 | A08 | `app/harness/tools.py` | **H2** — typed tool registry, Pydantic in/out pairs, `READ` / `PROPOSE` / `ACT` permission tiers |
 | A09 | `app/harness/idempotency.py` | **H3** — `idempotency_key` derivation, `ActionState` table, at-most-once `ACT` execution |
 | A10 | `app/harness/guardrails.py` | **H4** — schema validation, DB existence check, arithmetic verifier, evidence-completeness check, safe downgrade to `queued` |
@@ -713,16 +766,14 @@ column-mapping config, so the engine never sees a raw CSV column name.
 | A14 | `app/harness/audit.py` | **H11** — append-only writer, `prev_hash` / `this_hash` chaining, chain verification |
 | A15 | `app/harness/evidence_pack.py` | **H11** — per-case ZIP: source rows, candidates, scores, policy evaluated, decision, resulting rule, trace link |
 
----
-
-### Group 3 — Matching engine (8 agents)
-
-**Depends on:** A00 models. The core of Workflows 1 and 2.
+#### SO-3 · Matching Engine — 8 workers
+**Owns:** `app/engine/` matching modules. **Workflows 1 and 2.**
+**Depends on:** MO contract (models)
 
 | ID | Owns | Deliverable |
 |---|---|---|
 | A16 | `app/engine/normalize.py` | Case, punctuation, store-number, corporate-suffix and location-token normalization |
-| A17 | `app/engine/merchant.py` | **Workflow 1** — alias table lookup, historical confirmed mappings, RapidFuzz resolution, canonical merchant + proposed GL category |
+| A17 | `app/engine/merchant.py` | **Workflow 1** — alias lookup, historical confirmed mappings, RapidFuzz resolution, canonical merchant + proposed GL category |
 | A18 | `app/engine/entity.py` | Customer and vendor identity resolution, alias history |
 | A19 | `app/engine/cash_candidates.py` | **Workflow 2, Pass A/B** — deterministic rules, then bounded candidate generation filtered by customer, open status, currency and date window |
 | A20 | `app/engine/subsetsum.py` | Capped combinatorial allocation, maximum bundle size 4 |
@@ -730,11 +781,9 @@ column-mapping config, so the engine never sees a raw CSV column name.
 | A22 | `app/engine/residual.py` | Partial, over- and under-settlement; explicit residual cash and residual invoice balance |
 | A23 | `app/engine/duplicates.py` | Duplicate transaction and duplicate invoice detection |
 
----
-
-### Group 4 — GST reconciliation (3 agents)
-
-**Depends on:** A00 models. **Workflow 4.**
+#### SO-4 · GST — 3 workers
+**Owns:** `app/engine/gst_*.py`. **Workflow 4.**
+**Depends on:** MO contract (models); SO-3 normalization interface
 
 | ID | Owns | Deliverable |
 |---|---|---|
@@ -742,47 +791,31 @@ column-mapping config, so the engine never sees a raw CSV column name.
 | A25 | `app/engine/gst_mismatch.py` | Fuzzy invoice-number handling (`INV-00123` vs `INV/123`) under policy; mismatch classification into the GST taxonomy |
 | A26 | `app/engine/gst_vendor.py` | Exception grouping by vendor; correction-request drafting with exact invoice evidence; tracking unresolved items across filing periods |
 
----
-
-### Group 5 — Close reconciliation (3 agents)
-
-**Depends on:** A00 models. **Workflow 3, fully built.**
+#### SO-5 · Close — 4 workers
+**Owns:** `app/engine/close_*.py`. **Workflow 3, fully built.**
+**Depends on:** MO contract (models)
 
 | ID | Owns | Deliverable |
 |---|---|---|
 | A27 | `app/engine/close_ops_erp.py` | Ops ↔ ERP matching, missing-record detection |
 | A28 | `app/engine/close_bank.py` | ERP ↔ bank reconciliation, fee and timing difference explanation |
 | A29 | `app/engine/close_advanced.py` | Intercompany differences, accrual-required cases, FX revaluation pending |
+| A30 | `app/engine/close_readiness.py` | Per-workflow resolution percentages, blockers, overall readiness score, today's high-impact actions |
 
----
-
-### Group 6 — Policy, memory, explanation (4 agents)
-
-**Depends on:** A00 models.
-
-| ID | Owns | Deliverable |
-|---|---|---|
-| A30 | `app/policy/engine.py`, `config/policies.yaml` | Versioned policy evaluation: materiality, freshness, thresholds, never-auto, controller approval, blocks-close |
-| A31 | `app/memory/rules.py` | Learned rule store: type, pattern, scope, source case, confidence, use count, expiry, disable |
-| A32 | `app/engine/exceptions.py` | Full §9 taxonomy plus classifier, across all four workflows |
-| A33 | `app/engine/explain.py` | Evidence assembly and ranked-alternatives generation for every case |
-
----
-
-### Group 7 — Close readiness (1 agent)
-
-**Depends on:** A00 models.
+#### SO-6 · Policy & Memory — 4 workers
+**Owns:** `app/policy/`, `app/memory/`, taxonomy and explanation
+**Depends on:** MO contract (models)
 
 | ID | Owns | Deliverable |
 |---|---|---|
-| A34 | `app/engine/close_readiness.py` | Per-workflow resolution percentages, blockers, overall readiness score, today's high-impact actions |
+| A31 | `app/policy/engine.py`, `config/policies.yaml` | Versioned policy evaluation: materiality, freshness, thresholds, never-auto, controller approval, blocks-close |
+| A32 | `app/memory/rules.py` | Learned rule store: type, pattern, scope, source case, confidence, use count, expiry, disable |
+| A33 | `app/engine/exceptions.py` | Full §9 taxonomy plus classifier, across all four workflows |
+| A34 | `app/engine/explain.py` | Evidence assembly and ranked-alternatives generation for every case |
 
----
-
-### Group 8 — Pipeline, API and UI (10 agents)
-
-**Depends on:** A00 contract. The frozen API contract from §12 lets the UI agents build against a
-mock, so they never wait on the backend agents.
+#### SO-7 · Pipeline & API — 5 workers
+**Owns:** `app/pipeline.py`, `app/api/`
+**Depends on:** MO contract (OpenAPI stub); consumes every engine sub-tree
 
 | ID | Owns | Deliverable |
 |---|---|---|
@@ -791,17 +824,22 @@ mock, so they never wait on the backend agents.
 | A37 | `app/api/cases.py` | `GET /cases`, `GET /cases/{id}`, `POST /cases/{id}/decision` |
 | A38 | `app/api/rules.py` | `GET /rules`, `POST /rules/{id}/disable` |
 | A39 | `app/api/audit.py` | `GET /audit`, `GET /audit/verify`, `GET /cases/{id}/evidence-pack`, `GET /runs` |
+
+#### SO-8 · Interface — 5 workers
+**Owns:** `ui/`
+**Depends on:** MO contract (OpenAPI stub) only — builds against a mock, never blocked by SO-7
+
+| ID | Owns | Deliverable |
+|---|---|---|
 | A40 | `ui/src/screens/CloseReadiness.tsx` | **Screen 1** — overall %, per-workflow bars, blockers, high-impact actions |
 | A41 | `ui/src/screens/ExceptionQueue.tsx` | **Screen 2** — sortable by financial impact; agent's view, confidence and impact per row |
 | A42 | `ui/src/screens/CaseDetail.tsx` | **Screen 3** — evidence, ranked alternatives, arithmetic shown, Approve / Edit split / Reject / Leave unapplied, "View agent reasoning →" |
 | A43 | `ui/src/screens/RulesLearned.tsx` | **Screen 4** — pattern, scope, source case, use count, disable toggle |
 | A44 | `ui/src/screens/AuditTimeline.tsx` | **Screen 5** — every state transition, hash-chain status badge, evidence-pack download |
 
----
-
-### Group 9 — Sponsor integrations (5 agents)
-
-**Depends on:** A00 models; A08 tool registry for span wrapping.
+#### SO-9 · Sponsor Integrations — 5 workers
+**Owns:** `app/integrations/`, `app/api/webhooks_dodo.py`, `seed/dodo_seed.py`
+**Depends on:** MO contract (models); SO-2 tool registry for span wrapping
 
 | ID | Owns | Deliverable |
 |---|---|---|
@@ -811,11 +849,9 @@ mock, so they never wait on the backend agents.
 | A48 | `app/api/webhooks_dodo.py` | HMAC-SHA256 verification on `webhook-id` / `webhook-timestamp` / `webhook-signature`; idempotent handler; events → `FinancialTransaction(source=dodo)` |
 | A49 | `app/engine/processor_exceptions.py` | `PROCESSOR_FEE_DIFFERENCE`, `SETTLEMENT_TIMING`, `REFUND_REVERSAL`, `DISPUTE_HOLD` |
 
----
-
-### Group 10 — Data and evaluation (4 agents)
-
-**Depends on:** A00 models; A30 policy for the safety metric.
+#### SO-10 · Data & Evaluation — 4 workers
+**Owns:** `seed/generate.py`, `evals/`
+**Depends on:** MO contract (models); SO-6 policy for the safety metric
 
 | ID | Owns | Deliverable |
 |---|---|---|
@@ -824,11 +860,9 @@ mock, so they never wait on the backend agents.
 | A52 | `evals/report.py` | `evals/reports/scorecard.md` renderer |
 | A53 | `evals/verify_labels.py` | Stratified 40-record label audit, so ground truth is checked rather than assumed |
 
----
-
-### Group 11 — QA and submission artifacts (4 agents)
-
-**Depends on:** merged output of the groups above.
+#### SO-11 · QA & Submission — 4 workers
+**Owns:** `tests/e2e/`, `README.md`, `docs/`
+**Depends on:** merged output of every other sub-tree
 
 | ID | Owns | Deliverable |
 |---|---|---|
@@ -839,30 +873,66 @@ mock, so they never wait on the backend agents.
 
 ---
 
-### Agent count by group
+### 17.3 Agent roster
 
-| Group | Agents |
+| Tier | Count |
 |---|---:|
-| 0 · Foundation | 1 |
-| 1 · Source adapters | 6 |
-| 2 · Harness layer | 9 |
-| 3 · Matching engine | 8 |
-| 4 · GST reconciliation | 3 |
-| 5 · Close reconciliation | 3 |
-| 6 · Policy, memory, explanation | 4 |
-| 7 · Close readiness | 1 |
-| 8 · Pipeline, API and UI | 10 |
-| 9 · Sponsor integrations | 5 |
-| 10 · Data and evaluation | 4 |
-| 11 · QA and submission | 4 |
-| **Total** | **58** |
+| Main Orchestrator | 1 |
+| Sub-Orchestrators (SO-1 … SO-11) | 11 |
+| Worker agents (A01 … A57) | 57 |
+| **Total** | **69** |
+
+| Sub-tree | Workers |
+|---|---:|
+| SO-1 · Ingestion | 7 |
+| SO-2 · Platform Harness | 8 |
+| SO-3 · Matching Engine | 8 |
+| SO-4 · GST | 3 |
+| SO-5 · Close | 4 |
+| SO-6 · Policy & Memory | 4 |
+| SO-7 · Pipeline & API | 5 |
+| SO-8 · Interface | 5 |
+| SO-9 · Sponsor Integrations | 5 |
+| SO-10 · Data & Evaluation | 4 |
+| SO-11 · QA & Submission | 4 |
 
 ---
 
-### Standing instructions for every worker agent
+### 17.4 Escalation and reporting protocol
+
+**Upward — worker → SO → MO**
+
+| Situation | Handled by |
+|---|---|
+| Needs a file inside its own sub-tree | SO reassigns or sequences the two workers |
+| Needs a file in another sub-tree | Escalate to MO; MO routes it to the owning SO |
+| Wants to change the data model (§3) or API contract (§12) | **MO only.** Contract amendments are never unilateral |
+| Ambiguity about which exception type owns a case | MO, since the taxonomy (§9) spans sub-trees |
+| Sub-tree internally red | SO fixes before surfacing to MO |
+
+**Downward — MO → SO → worker**
+MO dispatches a domain brief; the SO decomposes it into `.ao/tasks/<AGENT-ID>.md` files and assigns
+them. Every task file names the owning agent, its files, its deliverable, and its dependencies.
+
+**Merge path**
+`worker PR → SO review (tests present, boundary respected, domain green) → MO merge queue
+→ global invariants checked → main`
+
+---
+
+### 17.5 Global invariants — enforced by MO, on every merge
+
+1. The audit log is append-only and the hash chain verifies.
+2. No `ACT`-tier tool executes without an idempotency key.
+3. No case auto-resolves without policy approval, regardless of confidence.
+4. No candidate ID reaches a proposal without existing in the database.
+5. Every case carries evidence, a policy version, and a Neatlogs trace ID.
+6. No eval number, metric, or test result is ever fabricated.
+
+### 17.6 Standing instructions for every worker agent
 
 1. You own the files listed in your row. Raise a dependency rather than editing outside them.
-2. The data model (§3) and the API contract (§12) come from A00. Code against them.
+2. The data model (§3) and the API contract (§12) come from MO. Code against them.
 3. Ship unit tests with your module. A PR without tests does not merge.
 4. Never fabricate an eval number, a metric, or a test result.
 5. No credentials in code, task descriptions, or commit messages.
@@ -874,7 +944,7 @@ mock, so they never wait on the backend agents.
 
 | Criterion | Weight | Where it's earned |
 |---|---|---|
-| **AO Usage & Build Process** | 25% | §5 + §17 — `.ao/` rules committed first, ~45 parallel worktree PRs, `AO-SESSIONS.md`, commit trailers, AO dashboard on camera. AO isn't decoration here; a 10-hour build of this size is only possible because of it |
+| **AO Usage & Build Process** | 25% | §5 + §17 — `.ao/` rules committed first, 57 parallel worktree PRs, `AO-SESSIONS.md`, commit trailers, AO dashboard on camera. AO isn't decoration here; a 10-hour build of this size is only possible because of it |
 | **Technical Execution & Reliability** | 25% | §4 harnesses, §11 eval gate with unsafe-auto-resolve = 0, §13 hash-chained audit, §14 controls, chaos demo |
 | **Track Fit & Real-World Value** | 25% | Four genuine Office-of-the-CFO workflows, full exception taxonomy, human review gates, evidence packs, close readiness |
 | **Demo & Usability** | 15% | §15 — one hero case, one learning proof, one reliability proof, in 3 minutes |
@@ -897,6 +967,62 @@ replacement · tax filing engine · payroll · a generic autonomous-CFO chatbot 
 
 > **The standing rule:** if a feature cannot appear in the 3-minute video *or* in
 > `evals/reports/scorecard.md`, it does not get built during the hackathon.
+
+---
+
+## 20. Submission requirements
+
+Hard requirements from the organisers. Missing any one of these invalidates the entry regardless of
+how good the build is.
+
+**Deadline:** September 7, 2026, 03:30 IST (September 6, 18:00 EDT).
+
+### Accounts and registration
+| Item | Where |
+|---|---|
+| Discord — **mandatory** | https://discord.gg/Sy3EwRBQX3 |
+| Devpost — **the only official submission channel** | https://syndicate-by-maximor.devpost.com/ |
+| Luma registration | https://luma.com/d0kq45ek |
+| Hackathon pass (post it, tag AO) | https://aoagents.dev/hackathons/syndicate/pass/ |
+| TensorMux key | https://app.tensormux.com |
+| AI Grants India — GPT-5 Nano / credits | https://aigrants.in/form?ref=ao |
+
+**Every team member registers individually. One official submission per team.**
+
+### Devpost submission fields
+- Team name and team member names
+- Selected track — **Track 2: Autonomous Office of the CFO**
+- Public GitHub repository link
+- Live project link, if deployed
+- **Public link to the demo video posted on X or LinkedIn**
+- Brief description of what was built
+- **Explanation of how AO was used during the build**
+
+### Demo video
+- Posted publicly on **X or LinkedIn**; the post URL goes on Devpost. The video itself is not uploaded to Devpost.
+- Must show **what the project does** *and* **the AO sessions used while building it**. Judges count AO sessions from the video — §15 reserves a beat for the AO dashboard.
+
+### README must explain
+- What the project does
+- How to run it
+- Which track it is submitted to
+- What agent workflow was built
+- What improved across iterations — this is `evals/reports/scorecard.md`
+- Any demo or live links
+
+### What the Track 2 judges said they are looking for
+Quoted priorities, and where this architecture answers them:
+
+| Judge question | Answered by |
+|---|---|
+| "Is the problem a genuine pain-point for people in the Office of the CFO?" | §1 — four real reconciliation workflows, not a CFO chatbot |
+| "Is the human judgement side of the finance automation truly intuitive?" | §10 policy engine, §12 exception queue — the human is a judge, not a detective |
+| "How deep and well thought through is the automation in context of the specific workflow?" | §9 exception taxonomy, §5–8 per-workflow depth |
+| "How well grounded is this to be genuinely used by accountants in the real world?" | §13 audit trail and evidence packs, §14 failure controls |
+
+They also said explicitly: **don't build login/auth/2FA unless it's core to the idea** (§0 already
+removes it), **don't leave the demo video to the last minute**, and **3 minutes is not a lot of
+time** (§15 is timed to the second).
 
 ---
 
