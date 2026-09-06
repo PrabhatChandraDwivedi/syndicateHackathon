@@ -1,7 +1,8 @@
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from app.db.store import connect, init_db, insert_row, query, count
 from app.adapters.csv_source import ingest_file, load_csv
@@ -12,7 +13,9 @@ from app.policy.engine import load_policy, decide
 from app.harness.audit import AuditWriter
 from app.harness.tracing import init_tracing, span, current_run_id, trace_id
 from seed.generate import generate
-
+from app.memory.rules import RuleStore
+from app.engine.adjudicator import is_ambiguous, adjudicate
+from app.harness.modelrouter import ModelRouter
 
 def load_merchants(path: str) -> List[Merchant]:
     rows = load_csv(path)
@@ -86,9 +89,19 @@ def _txn_to_row(txn: Any) -> Dict[str, Any]:
 
 
 @span('run_pipeline', kind='WORKFLOW')
-def run_pipeline(db_path: str = ':memory:', data_dir: str = './seed/data', policy_path: str | None = None) -> dict:
+def run_pipeline(db_path: str = ':memory:', data_dir: str = './seed/data', policy_path: str | None = None, rules_path: Optional[str] = None, use_llm: bool = True) -> dict:
     init_tracing()
     run_id = current_run_id()
+
+    # Determine rules path
+    if rules_path is None:
+        rules_path = os.environ.get('RULES_PATH', './data/rules.json')
+
+    # Initialize Rules Store (memory)
+    rule_store = RuleStore(rules_path)
+
+    # Build ModelRouter if using LLM adjudication
+    router = ModelRouter() if use_llm else None
 
     # Ensure seed data exists
     paths = generate(data_dir)
@@ -133,10 +146,39 @@ def run_pipeline(db_path: str = ':memory:', data_dir: str = './seed/data', polic
     auto_resolved = 0
     needs_review = 0
     exceptions_counts: Dict[str, int] = {}
+    learned_rules_applied_count = 0
 
     for i, match in enumerate(matches, start=1):
         case_id = f'case_{i:03d}'
         workflow = 'card_to_bank'
+
+        # Pattern: compute stable pattern for the case
+        pattern = ''
+        selected_source: Optional[NormalizedTransaction] = None
+        if match.source_ids:
+            for sid in match.source_ids:
+                for s in sources:
+                    candidates = []
+                    for attr in ('id', 'transaction_id', 'txn_id', 'source_id', 'external_id'):
+                        if getattr(s, attr, None) is not None:
+                            candidates.append(getattr(s, attr))
+                    if sid in candidates:
+                        selected_source = s
+                        break
+                if selected_source:
+                    break
+        if selected_source is not None:
+            merchant_id = getattr(selected_source, 'merchant_id', None)
+            if merchant_id:
+                pattern = str(merchant_id)
+            else:
+                descriptor = getattr(selected_source, 'normalized_descriptor', None)
+                if descriptor:
+                    pattern = str(descriptor)
+        else:
+            pattern = ''
+
+        # Prepare source_ids and candidate_target_ids
         source_ids_json = json.dumps(match.source_ids)
         candidate_target_ids_json = json.dumps([match.target_id] if match.target_id else [])
         confidence = match.confidence
@@ -145,7 +187,7 @@ def run_pipeline(db_path: str = ':memory:', data_dir: str = './seed/data', polic
         amount_delta = match.amount_delta
         reasons_json = json.dumps(match.reasons)
 
-        # Compute amount for decision
+        # Compute amount_for_match (needed for policy decision)
         amount_for_match = 0.0
         if match.source_ids:
             amount_for_match = _sum_source_amounts(sources, match.source_ids)
@@ -154,9 +196,102 @@ def run_pipeline(db_path: str = ':memory:', data_dir: str = './seed/data', polic
             if t_amt is not None:
                 amount_for_match = t_amt
 
-        decision = decide(confidence, amount_for_match, exception_type, policy)
+        # LLM adjudication (optional)
+        adjudicated = False
+        adjudication_reason = None
+        adjudication_model = None
+        adjudication_payload_applied = False  # local flag for audit
 
-        status = 'auto_resolved' if isinstance(decision, dict) and decision.get('action') == 'auto_resolve' else 'needs_review'
+        if use_llm and match.target_id is not None and is_ambiguous(confidence) and (match.target_id is not None):
+            # Build source dict for adjudication
+            adjudication_source = None
+            if selected_source is not None:
+                adjudication_source = _txn_to_row(selected_source)
+
+            # Build candidate dicts for adjudication
+            adjudication_candidates: List[Dict[str, Any]] = []
+            if targets:
+                for t in targets:
+                    target_ids = []
+                    for attr in ('id', 'transaction_id', 'txn_id', 'target_id', 'external_id'):
+                        v = getattr(t, attr, None)
+                        if v is not None:
+                            target_ids.append(v)
+                    if match.target_id in target_ids:
+                        adjudication_candidates.append(_txn_to_row(t))
+
+            if adjudication_source is not None and adjudication_candidates:
+                try:
+                    adjudicate_result = adjudicate(adjudication_source, adjudication_candidates, router=router, max_tokens=400)
+                    if isinstance(adjudicate_result, dict):
+                        adjudicated = bool(adjudicate_result.get('adjudicated'))
+                        adjudication_reason = adjudicate_result.get('reason')
+                        adjudication_model = adjudicate_result.get('model')
+                        adjudication_payload_applied = adjudicated
+                except Exception:
+                    adjudicated = False
+                    adjudication_reason = None
+                    adjudication_model = None
+
+        # Learned rule and policy decision
+        # a. Determine pattern-based rule BEFORE policy decision
+        learned_rule_applied = None
+        decision_reason = None
+
+        policy_decision = decide(confidence, amount_for_match, exception_type, policy)
+        # Determine blocking by policy
+        blocked = False
+        if isinstance(policy_decision, dict):
+            blocked_types = policy_decision.get('blocked_exception_types')
+            if isinstance(blocked_types, list) and isinstance(exception_type, str) and exception_type in blocked_types:
+                blocked = True
+
+        # Get candidate rule if any
+        rule = rule_store.match(pattern) if pattern else None
+        # Determine status from policy first
+        status = 'auto_resolved' if isinstance(policy_decision, dict) and policy_decision.get('action') == 'auto_resolve' else 'needs_review'
+
+        if not blocked and rule is not None:
+            if rule.action == 'auto_resolve':
+                status = 'auto_resolved'
+                learned_rule_applied = rule.rule_id
+                decision_reason = f'learned rule {rule.rule_id} from case {rule.created_from_case}'
+            elif rule.action == 'always_review':
+                status = 'needs_review'
+                learned_rule_applied = rule.rule_id
+                # decision_reason remains from policy
+            else:
+                # If rule action is something else, do not alter status
+                pass
+        # If no rule or blocked, decision_reason from policy if available
+        if decision_reason is None:
+            if isinstance(policy_decision, dict) and 'reason' in policy_decision:
+                decision_reason = policy_decision.get('reason')
+
+        # If learned rule applied, ensure learned_rule_applied is captured
+        if learned_rule_applied is not None:
+            learned_rules_applied_count += 1
+
+        # Build case dict
+        case_dict = {
+            'case_id': case_id,
+            'workflow': workflow,
+            'source_ids': source_ids_json,
+            'candidate_target_ids': candidate_target_ids_json,
+            'confidence': confidence,
+            'method': method,
+            'exception_type': exception_type,
+            'amount_delta': amount_delta,
+            'reasons': reasons_json,
+            'decision': policy_decision,
+            'status': status,
+            'pattern': pattern,
+            'learned_rule_applied': learned_rule_applied,
+            'decision_reason': decision_reason,
+            'adjudicated': adjudicated,
+            'adjudication_reason': adjudication_reason,
+            'adjudication_model': adjudication_model
+        }
 
         # Audit payload
         audit_payload = {
@@ -173,29 +308,22 @@ def run_pipeline(db_path: str = ':memory:', data_dir: str = './seed/data', polic
             'exception_type': exception_type,
             'amount_delta': amount_delta,
             'reasons': reasons_json,
-            'decision': decision,
-            'neatlogs_trace_id': trace_id(),
+            'decision': policy_decision,
+            'adjudicated': adjudicated,
+            'adjudication_reason': adjudication_reason,
+            'adjudication_model': adjudication_model,
             'after_state': status,
-            'policy_version': decision.get('policy_version') if isinstance(decision, dict) else None,
+            'pattern': pattern,
+            'policy_version': policy_decision.get('policy_version') if isinstance(policy_decision, dict) else None,
+            'neatlogs_trace_id': trace_id(),
         }
+        if learned_rule_applied is not None:
+            audit_payload['learned_rule_id'] = learned_rule_applied
+
         try:
             auditor.append(audit_payload)
         except Exception:
             pass
-
-        case_dict = {
-            'case_id': case_id,
-            'workflow': workflow,
-            'source_ids': source_ids_json,
-            'candidate_target_ids': candidate_target_ids_json,
-            'confidence': confidence,
-            'method': method,
-            'exception_type': exception_type,
-            'amount_delta': amount_delta,
-            'reasons': reasons_json,
-            'decision': decision,
-            'status': status
-        }
 
         cases.append(case_dict)
 
@@ -224,7 +352,8 @@ def run_pipeline(db_path: str = ':memory:', data_dir: str = './seed/data', polic
             'needs_review': needs_review,
         },
         'exceptions': exceptions_counts,
-        'audit_ok': audit_ok
+        'audit_ok': audit_ok,
+        'learned_rules_applied': learned_rules_applied_count
     }
 
     return summary

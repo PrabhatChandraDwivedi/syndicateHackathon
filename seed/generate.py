@@ -26,6 +26,7 @@ _CARD_ROWS: List[Dict[str, Any]] = [
     {"id": "C008", "source": "corporate_card", "account_id": "CARD-9012", "date": "2026-08-12", "amount": "850.50", "currency": "INR", "counterparty_raw": "SWIGGY ORDER 100235", "reference_raw": "REF100235"},
     {"id": "C009", "source": "corporate_card", "account_id": "CARD-9012", "date": "2026-08-15", "amount": "2750.00", "currency": "INR", "counterparty_raw": "UNKNOWN VENDOR XYZ 5567", "reference_raw": "REF5567"},
     {"id": "C010", "source": "corporate_card", "account_id": "CARD-9012", "date": "2026-08-03", "amount": "450.00", "currency": "INR", "counterparty_raw": "POS VISA STARBUCKS INDIA PVT LTD 4412998", "reference_raw": "REF4412998"},
+    {"id": "C011", "source": "corporate_card", "account_id": "CARD-9012", "date": "2026-08-14", "amount": "3200.00", "currency": "INR", "counterparty_raw": "POS UBER INDIA SYSTEMS 88231", "reference_raw": "REFUBER8823"},
 ]
 
 _BANK_ROWS: List[Dict[str, Any]] = [
@@ -37,7 +38,9 @@ _BANK_ROWS: List[Dict[str, Any]] = [
     {"id": "B006", "source": "bank", "account_id": "BANK-4471", "date": "2026-08-12", "amount": "1250.50", "currency": "INR", "counterparty_raw": "SWIGGY AGGREGATED PAYOUT", "reference_raw": "BULK-7781"},
     {"id": "B007", "source": "bank", "account_id": "BANK-4471", "date": "2026-08-13", "amount": "600.00", "currency": "INR", "counterparty_raw": "STARBUCKS", "reference_raw": "REF998123"},
     {"id": "B008", "source": "bank", "account_id": "BANK-4471", "date": "2026-08-20", "amount": "5000.00", "currency": "INR", "counterparty_raw": "UNMATCHED BANK CREDIT", "reference_raw": "REF9999"},
+    {"id": "B009", "source": "bank", "account_id": "BANK-4471", "date": "2026-08-16", "amount": "3200.00", "currency": "INR", "counterparty_raw": "UBER INDIA", "reference_raw": "BULK9001"},
 ]
+
 
 # File headers for consistency
 _MERCHANTS_HEADER = ["merchant_id", "canonical_name", "aliases", "default_gl_code"]
