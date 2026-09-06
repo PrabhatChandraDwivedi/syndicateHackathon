@@ -5,9 +5,9 @@
 
 **Status:** Final, build-ready. Supersedes `docs/Track-2-Original-Architecture.md` (kept for reference).
 
-> ### Built by a 69-agent orchestration tree under Agent Orchestrator
+> ### Built by a 68-agent orchestration tree under Agent Orchestrator
 > Every feature in this document ships. **§17 is the orchestration hierarchy and task division** —
-> one Main Orchestrator, eleven Sub-Orchestrators, 57 worker agents. Each worker owns a bounded
+> one Main Orchestrator, eleven Sub-Orchestrators, 56 worker agents. Each worker owns a bounded
 > set of files with named deliverables and named dependencies.
 
 ---
@@ -30,17 +30,18 @@ Supabase stack with Supabase Auth, RBAC, Upstash Redis, and Vercel. Both are tri
 | Vercel / managed hosting | We run our own server (`uvicorn`). Fully local demo = no network risk during the video. |
 | Kafka / RabbitMQ / K8s / microservices | An in-process job queue backed by a SQLite `outbox` table is sufficient and is *visible* in the audit trail. |
 | Vector DB / embeddings | Merchant and entity resolution is solved better and more explainably by normalization + RapidFuzz + a learned alias table. |
-| Live GST portal / live bank / live ERP connectors | Adapters sit behind an interface; inputs are CSV/JSON + Dodo test-mode webhooks. |
+| Live GST portal / live bank / live ERP connectors | Adapters sit behind an interface; inputs are CSV and JSON exports. |
 | Full GL replacement, tax filing engine, payroll | Out of Track 2's demonstrable scope. |
 | **Replay harness** | The hash-chained append-only audit log already answers "why did the system do this?" Deterministic re-execution is a production feature. |
+| **Live Dodo Payments webhooks** | Optional sponsor integration, not a rule and not in the rubric. It was the only sub-tree with an external blocker (account verification + a public tunnel) and a live webhook mid-recording is a demo risk for zero points. **The finance content is kept** — processor settlement differences are reconciled from a payout report instead. See §8. |
 
 Everything else from the original spec **ships**. See §17 for how the work divides across the orchestration tree.
 
 ### Added — the harness layer
 
 The original doc described *what the agent does*. It barely described *what the agent runs on*.
-Sections 4–13 define **eleven harnesses** plus the four sponsor integrations (**AO, Neatlogs,
-TensorMux, Dodo Payments**). These are where "Technical Execution & Reliability" (25%) and
+Sections 4–13 define **eleven harnesses** plus the three sponsor integrations (**AO, Neatlogs,
+TensorMux**). These are where "Technical Execution & Reliability" (25%) and
 "AO Usage & Build Process" (25%) — half the total score — are actually won.
 
 ---
@@ -60,7 +61,7 @@ The output is a continuously-improving **close-readiness** number instead of a m
 | # | Workflow | Set A | Set B | Question |
 |---|---|---|---|---|
 | 1 | Card merchant normalization | Card transactions | Merchant master + GL categories | Who is this merchant, how is it classified? |
-| 2 | Cash application | Incoming bank / Dodo payments | Open AR invoices | Which invoice(s) did this cash settle? |
+| 2 | Cash application | Incoming bank / processor payouts | Open AR invoices | Which invoice(s) did this cash settle? |
 | 3 | Ops ↔ ERP ↔ Bank close | Ops/sales export | ERP + bank | Do the systems agree, what blocks close? |
 | 4 | GST purchase reconciliation | Purchase register | GSTR-2B | Which invoices are supported / missing / mismatched? |
 
@@ -77,7 +78,7 @@ flowchart TB
       S4[Purchase Register CSV]
       S5[GSTR-2B JSON]
       S6[Ops / Sales export]
-      S7["Dodo Payments<br/>test-mode webhooks"]
+      S7["Processor payout report"]
     end
 
     subgraph HARNESS["Harness layer"]
@@ -131,7 +132,7 @@ flowchart TB
 | Frontend | **Vite + React + Tailwind**, 5 screens | Fast, no auth, reads the same REST API the agent writes to. |
 | Inference | **TensorMux** (OpenAI-compatible) | Routing + metering, see §7. |
 | Tracing | **Neatlogs** | See §6. |
-| Payments feed | **Dodo Payments test mode** | See §8. |
+| Processor feed | **Payout report CSV** | See §8. No external dependency, no tunnel, no live call during the demo. |
 | Dev orchestration | **AO** | See §5 and §17. Mandatory. |
 
 **No auth of any kind.** The server binds to localhost. `actor_id` is set by a header
@@ -146,12 +147,12 @@ produced first by the Main Orchestrator (§17) and treated as fixed thereafter. 
 
 ```python
 FinancialTransaction:
-  id, source: bank|corporate_card|payment_processor|dodo
+  id, source: bank|corporate_card|payment_processor
   account_id, date, amount, currency
   counterparty_raw, reference_raw
   raw_payload: JSON                       # always kept — evidence
   source_file_id, ingested_at             # new: provenance
-  external_id                             # new: Dodo payment_id, for idempotency
+  external_id                             # new: processor payment id, for idempotency
 
 Invoice:
   id, invoice_number, entity_id, counterparty_id
@@ -228,7 +229,7 @@ Full tool list:
 ```
 ingest_bank_statement · ingest_card_statement · ingest_open_invoices
 ingest_purchase_register · ingest_gstr2b · ingest_ops_export
-ingest_dodo_webhook
+ingest_payout_report
 
 normalize_entity · resolve_merchant · find_customer_candidates
 find_invoice_candidates · score_invoice_allocation · match_gst_invoice
@@ -286,7 +287,7 @@ leaves the machine, with the Slack sink shown as configured-but-gated.
 
 ## 5. AO (Agent Orchestrator) — mandatory, 25% of score
 
-AO is not a runtime dependency of ReconcileOS. It is the **development harness** — and with a 69-agent
+AO is not a runtime dependency of ReconcileOS. It is the **development harness** — and with a 68-agent
 tree building this system in 10 hours, it is also the only reason the build is feasible at all.
 That makes AO usage genuinely load-bearing here rather than a checkbox, which is exactly the story
 the judges are looking for.
@@ -296,17 +297,17 @@ the judges are looking for.
   - `.ao/orchestrator-rules.md` — task decomposition, boundary enforcement, dedup, dependency detection, evidence-before-integration, *reject fabricated eval numbers*, Track-2 scope compliance.
   - `.ao/worker-rules.md` — **file-ownership boundaries are absolute**; a worker that needs a file it doesn't own raises a dependency instead of editing it. Mandatory tests per unit. No credentials in task descriptions.
   - `.ao/tasks/` — one file per task from §17's breakdown, so the decomposition itself is in git history.
-- **57 worker agents in isolated worktrees, one PR each**, dispatched through eleven Sub-Orchestrators (§17).
+- **56 worker agents in isolated worktrees, one PR each**, dispatched through eleven Sub-Orchestrators (§17).
 - **AO handles CI fixes and merge conflicts** on worker PRs — with disjoint file ownership there should be almost none, which is the whole design.
 - **Orchestrator gates merges** on: tests pass, contract unchanged, eval scorecard not regressed, audit invariants hold.
 
 ### Evidence we produce for the judges
 | Artifact | Where |
 |---|---|
-| `.ao/` rules + 57 task files | repo root, committed first |
+| `.ao/` rules + 56 task files | repo root, committed first |
 | `docs/AO-SESSIONS.md` — session count, task→PR→commit table, dashboard screenshots | repo |
 | Commit trailer `AO-Session: <id>` on worker commits | git log |
-| 57 PRs / branches showing genuine parallel execution | GitHub |
+| 56 PRs / branches showing genuine parallel execution | GitHub |
 | ~20s of the demo video showing the live AO dashboard mid-run | demo |
 
 > **Hold the line:** if a module was written outside AO, say so. Fabricated AO evidence is a
@@ -388,27 +389,34 @@ version that ships.
 
 ---
 
-## 8. Dodo Payments — a live third-party financial feed
+## 8. Processor settlement reconciliation
 
-The original spec's inputs are all CSVs. Dodo test mode gives us **one genuinely live, external,
-event-driven source** — which makes the demo materially more credible and satisfies "genuine tool usage."
+A payment processor is a second system that describes the same money differently — which makes it
+the same problem as every other workflow here, and a genuinely common one in the Office of the CFO.
 
-### Integration
-- **Outbound:** a seed script creates test-mode products, customers, one-time payments, a subscription, and a refund — the kind of AR activity a SaaS company actually has.
-- **Inbound:** `POST /webhooks/dodo` receives `payment.succeeded`, `payment.failed`, `refund.succeeded`, `subscription.renewed`, `dispute.opened`.
-  - **HMAC-SHA256 verification** using the `webhook-id` / `webhook-timestamp` / `webhook-signature` headers. (This is *signature* verification, not user auth — it stays.)
-  - Handler is **idempotent on `webhook-id`** via H3; replayed webhooks are no-ops.
-- Each verified event becomes a `FinancialTransaction` with `source=dodo`, `external_id=payment_id`, and flows into **cash application (Workflow 2)** exactly like a bank line.
+**Input:** a **payout report CSV** (`app/adapters/payout_report.py`), the export every processor
+provides. Rows become `FinancialTransaction` with `source=payment_processor` and an `external_id`,
+then flow into **cash application (Workflow 2)** exactly like a bank line. No new engine.
 
-### Why this earns points beyond "we used a sponsor"
-Payment-processor settlements produce *real* reconciliation exceptions, for free:
-- **Gross vs net** — customer paid ₹30,000, payout is ₹29,115 after fees → `PROCESSOR_FEE_DIFFERENCE`, resolved with a fee explanation rather than reported as a false mismatch. Proves the agent knows *not every difference is an error*.
-- **Timing** — payment succeeds on the 30th, payout lands on the 2nd → `SETTLEMENT_TIMING`, a legitimate cut-off difference the agent must *explain*, not "fix."
-- **Refunds** — a refund after invoice settlement forces a `REFUND_REVERSAL` audit event, proving history is never overwritten.
-- **Disputes** — `DISPUTE_HOLD` parks the receivable and blocks close, exercising the blocker path on the dashboard.
+### Why this earns its place
+Processor settlements produce reconciliation differences that are **legitimate, not errors** — and
+an agent that knows the difference is exactly the depth Track 2 rewards:
 
-Test mode only. Live keys are never used; `.env.example` ships `DODO_MODE=test` and the server
-refuses to boot in `live` mode.
+- **Gross vs net** — the customer paid INR 30,000; the payout is INR 29,115 after fees →
+  `PROCESSOR_FEE_DIFFERENCE`, resolved with a fee explanation rather than reported as a mismatch.
+- **Settlement timing** — the payment succeeds on the 30th, the payout lands on the 2nd →
+  `SETTLEMENT_TIMING`, a cut-off difference the agent must *explain*, not "fix."
+- **Refunds** — a refund after invoice settlement forces a `REFUND_REVERSAL` audit event, proving
+  history is never overwritten.
+- **Chargebacks** — `DISPUTE_HOLD` parks the receivable and blocks close, exercising the blocker
+  path on the dashboard.
+
+> **On Dodo Payments.** Dodo is the hackathon's credits partner, not a scored integration — it
+> appears in none of the eleven rules and in no rubric line. Live webhook ingestion (HMAC
+> verification, idempotent handler, test-mode seeding) is designed and specified, but sits in
+> **Stretch** (§19): it is the only piece of this build with an external blocker, and a live webhook
+> firing mid-recording is a demo risk for no marginal score. The adapter boundary means adding it
+> later is one new source, not an architectural change.
 
 ---
 
@@ -420,7 +428,7 @@ Explicit types make the agent testable, demoable, and gradeable.
 **Cash application:** `NO_INVOICE_MATCH` · `MULTIPLE_PLAUSIBLE_MATCHES` · `ONE_TO_MANY_PAYMENT` · `PARTIAL_PAYMENT` · `OVERPAYMENT` · `UNDERPAYMENT` · `UNKNOWN_PAYER`
 **Close:** `BANK_LEDGER_DIFFERENCE` · `OPS_ERP_MISSING_RECORD` · `INTERCOMPANY_DIFFERENCE` · `ACCRUAL_REQUIRED` · `FX_REVALUATION_PENDING` · `STALE_SOURCE_DATA`
 **GST:** `MISSING_IN_2B` · `MISSING_IN_ERP` · `GSTIN_MISMATCH` · `INVOICE_NUMBER_MISMATCH` · `DATE_MISMATCH` · `TAXABLE_VALUE_MISMATCH` · `TAX_AMOUNT_MISMATCH` · `DUPLICATE_INVOICE`
-**Processor (from Dodo):** `PROCESSOR_FEE_DIFFERENCE` · `SETTLEMENT_TIMING` · `REFUND_REVERSAL` · `DISPUTE_HOLD`
+**Processor (from the payout report):** `PROCESSOR_FEE_DIFFERENCE` · `SETTLEMENT_TIMING` · `REFUND_REVERSAL` · `DISPUTE_HOLD`
 
 ---
 
@@ -485,7 +493,7 @@ prohibited. So the numbers come from a committed golden dataset and a reproducib
 | GST exact matches | 30 |
 | GST mismatches (tax, taxable, number-format, missing-in-2B, duplicate) | 30 |
 | Ops↔ERP↔bank differences (incl. fee + timing) | 10 |
-| Processor exceptions (Dodo) | 5 |
+| Processor exceptions (payout report) | 5 |
 | Duplicates / stale / malformed (chaos) | 5 |
 
 **How the labels are produced — this is the integrity question.** `seed/generate.py` builds each
@@ -537,7 +545,6 @@ more than 1 point against the committed baseline.
 
 ```
 POST /ingest/{source}          multipart file upload
-POST /webhooks/dodo            HMAC-verified processor events
 POST /run                      trigger a reconciliation run  → { run_id, neatlogs_trace_id }
 GET  /close-readiness?period=  dashboard payload
 GET  /cases?status=&workflow=  exception queue
@@ -610,7 +617,7 @@ The narrative is **one hero case + one learning proof + one reliability proof.**
 | 0:00–0:20 | **Problem** | Close Readiness at **71%**, four workflows red, ₹4.2L of unresolved impact. *"Finance keeps comparing systems that describe the same money differently."* |
 | 0:20–1:00 | **Hero case — cash application** | ₹30,000 from XYZ Retail, reference `SERVICES JUNE`. Agent proposes INV-101 + 102 + 103 at 0.87 confidence with four evidence lines and two ranked alternatives. **Approve.** Audit event appears; a bundle rule is written. |
 | 1:00–1:25 | **GST exception** | INV-101: ERP ₹1,800 vs GSTR-2B ₹1,600 → `TAX_AMOUNT_MISMATCH`, 0.99. Agent drafts the vendor correction email. Human approves *sending* — showing the reasoning/action permission split. |
-| 1:25–1:50 | **Learning + Dodo** | Fresh card statement with `SBX*COFFEE 0811` → auto-resolves from the rule learned earlier, **zero LLM calls**. A live Dodo test payment fires a webhook and lands in the queue mid-demo. |
+| 1:25–1:50 | **Learning + processor** | Fresh card statement with `SBX*COFFEE 0811` → auto-resolves from the rule learned earlier, **zero LLM calls**. Then a payout report lands: the agent explains a INR 885 fee difference instead of flagging a false mismatch. |
 | 1:50–2:15 | **Reliability** | Hit `--chaos`: re-upload a file (no-op), stale GSTR-2B (blocked, not guessed), forced LLM 500 (falls back, then queues). **Zero duplicate actions.** Then `GET /audit/verify` → chain OK. |
 | 2:15–2:40 | **Measurable result + AO** | Scorecard: exception queue **−53%**, unsafe auto-resolutions **0**, cost/case **−41%**, readiness **71% → 89%**. Cut to the **AO dashboard** showing the orchestration tree and the session count. |
 | 2:40–3:00 | **Close** | *"The human still owns judgment. The agent owns the investigation, the evidence, the memory, and the proof."* Neatlogs trace link clicked from an audit row. |
@@ -629,7 +636,7 @@ syndicateHackathon/
 │   └── tasks/                  # one file per §17 task
 ├── app/
 │   ├── main.py                 # FastAPI; neatlogs.init() first
-│   ├── adapters/               # bank, card, ar, purchase, gstr2b, ops, dodo
+│   ├── adapters/               # bank, card, ar, purchase, gstr2b, ops, payout
 │   ├── models/                 # Pydantic + SQLite schema
 │   ├── engine/                 # normalize, merchant, cash, subsetsum, scoring,
 │   │                           # gst, close, exceptions
@@ -644,7 +651,7 @@ syndicateHackathon/
 │   ├── golden/                 # labelled dataset
 │   ├── run.py
 │   └── reports/scorecard.md
-├── seed/                       # dataset generator + Dodo test-mode seeder
+├── seed/                       # dataset generator + demo dataset
 ├── config/                     # policies.yaml, models.yaml, adapters/*.yaml
 ├── docs/
 │   ├── AO-SESSIONS.md
@@ -662,9 +669,6 @@ NEATLOGS_API_KEY=
 TENSORMUX_BASE_URL=https://api.tensormux.com/v1
 TENSORMUX_API_KEY=            # tmx_...
 TENSORMUX_MODEL=glm-4-7-flash
-DODO_API_KEY=
-DODO_WEBHOOK_SECRET=
-DODO_MODE=test          # server refuses to start on "live"
 DB_PATH=./reconcileos.db
 POLICY_VERSION=v1
 ```
@@ -695,15 +699,15 @@ flowchart TB
     MO --> SO10["SO-10<br/>Data &amp; Evaluation"]
     MO --> SO11["SO-11<br/>QA &amp; Submission"]
 
-    SO1 --> W1["A01–A07<br/>7 workers"]
+    SO1 --> W1["A01–A07, A47<br/>8 workers"]
     SO2 --> W2["A08–A15<br/>8 workers"]
     SO3 --> W3["A16–A23<br/>8 workers"]
     SO4 --> W4["A24–A26<br/>3 workers"]
-    SO5 --> W5["A27–A30<br/>4 workers"]
+    SO5 --> W5["A27–A30, A49<br/>5 workers"]
     SO6 --> W6["A31–A34<br/>4 workers"]
     SO7 --> W7["A35–A39<br/>5 workers"]
     SO8 --> W8["A40–A44<br/>5 workers"]
-    SO9 --> W9["A45–A49<br/>5 workers"]
+    SO9 --> W9["A45–A46<br/>2 workers"]
     SO10 --> W10["A50–A53<br/>4 workers"]
     SO11 --> W11["A54–A57<br/>4 workers"]
 ```
@@ -737,7 +741,7 @@ One bounded unit of work, an explicit file list, unit tests, one PR. Never edits
 
 ### 17.2 The eleven sub-trees
 
-#### SO-1 · Ingestion — 7 workers
+#### SO-1 · Ingestion — 8 workers
 **Owns:** `app/adapters/`, `config/adapters/`, `app/harness/ingestion.py`
 **Depends on:** MO contract (models)
 
@@ -749,6 +753,7 @@ One bounded unit of work, an explicit file list, unit tests, one PR. Never edits
 | A04 | `app/adapters/purchase_register.py`, `config/adapters/purchase.yaml` | Purchase register CSV → `Invoice(purchase)` |
 | A05 | `app/adapters/gstr2b.py`, `config/adapters/gstr2b.yaml` | GSTR-2B JSON/CSV → `GSTRecord` |
 | A06 | `app/adapters/ops_export.py`, `config/adapters/ops.yaml` | Ops/sales export → `OpsRecord` |
+| A47 | `app/adapters/payout_report.py`, `config/adapters/payout.yaml` | Processor payout report CSV → `FinancialTransaction(source=payment_processor)` |
 | A07 | `app/harness/ingestion.py` | **H1** — file fingerprinting, column sniffing, `as_of` freshness stamps, row quarantine with reasons |
 
 #### SO-2 · Platform Harness — 8 workers
@@ -791,7 +796,7 @@ One bounded unit of work, an explicit file list, unit tests, one PR. Never edits
 | A25 | `app/engine/gst_mismatch.py` | Fuzzy invoice-number handling (`INV-00123` vs `INV/123`) under policy; mismatch classification into the GST taxonomy |
 | A26 | `app/engine/gst_vendor.py` | Exception grouping by vendor; correction-request drafting with exact invoice evidence; tracking unresolved items across filing periods |
 
-#### SO-5 · Close — 4 workers
+#### SO-5 · Close — 5 workers
 **Owns:** `app/engine/close_*.py`. **Workflow 3, fully built.**
 **Depends on:** MO contract (models)
 
@@ -801,6 +806,7 @@ One bounded unit of work, an explicit file list, unit tests, one PR. Never edits
 | A28 | `app/engine/close_bank.py` | ERP ↔ bank reconciliation, fee and timing difference explanation |
 | A29 | `app/engine/close_advanced.py` | Intercompany differences, accrual-required cases, FX revaluation pending |
 | A30 | `app/engine/close_readiness.py` | Per-workflow resolution percentages, blockers, overall readiness score, today's high-impact actions |
+| A49 | `app/engine/processor_exceptions.py` | `PROCESSOR_FEE_DIFFERENCE`, `SETTLEMENT_TIMING`, `REFUND_REVERSAL`, `DISPUTE_HOLD` |
 
 #### SO-6 · Policy & Memory — 4 workers
 **Owns:** `app/policy/`, `app/memory/`, taxonomy and explanation
@@ -837,17 +843,15 @@ One bounded unit of work, an explicit file list, unit tests, one PR. Never edits
 | A43 | `ui/src/screens/RulesLearned.tsx` | **Screen 4** — pattern, scope, source case, use count, disable toggle |
 | A44 | `ui/src/screens/AuditTimeline.tsx` | **Screen 5** — every state transition, hash-chain status badge, evidence-pack download |
 
-#### SO-9 · Sponsor Integrations — 5 workers
-**Owns:** `app/integrations/`, `app/api/webhooks_dodo.py`, `seed/dodo_seed.py`
+#### SO-9 · Sponsor Integrations — 2 workers
+**Owns:** `app/integrations/`
 **Depends on:** MO contract (models); SO-2 tool registry for span wrapping
+**Both unblocked** — Neatlogs, TensorMux and OpenAI keys are all in hand.
 
 | ID | Owns | Deliverable |
 |---|---|---|
 | A45 | `app/integrations/neatlogs.py` | **§6** — WORKFLOW span per run, child span per tool call, span per LLM call, guardrail rejections as error events, `neatlogs_trace_id` propagated onto cases, runs and audit events |
-| A46 | `app/integrations/tensormux.py`, `config/models.yaml` | **§7** — OpenAI-compatible client, fast/reasoning routing table, fallback chain, degrade-to-`queued`, per-call token and cost metering onto the case |
-| A47 | `app/integrations/dodo_client.py`, `seed/dodo_seed.py` | **§8** — test-mode products, customers, one-time payments, subscription, refund |
-| A48 | `app/api/webhooks_dodo.py` | HMAC-SHA256 verification on `webhook-id` / `webhook-timestamp` / `webhook-signature`; idempotent handler; events → `FinancialTransaction(source=dodo)` |
-| A49 | `app/engine/processor_exceptions.py` | `PROCESSOR_FEE_DIFFERENCE`, `SETTLEMENT_TIMING`, `REFUND_REVERSAL`, `DISPUTE_HOLD` |
+| A46 | `app/integrations/tensormux.py`, `config/models.yaml` | **§7** — OpenAI-compatible client, task-profile routing, **TensorMux → OpenAI → degrade-to-`queued`** fallback chain, per-call token and cost metering onto the case |
 
 #### SO-10 · Data & Evaluation — 4 workers
 **Owns:** `seed/generate.py`, `evals/`
@@ -879,20 +883,20 @@ One bounded unit of work, an explicit file list, unit tests, one PR. Never edits
 |---|---:|
 | Main Orchestrator | 1 |
 | Sub-Orchestrators (SO-1 … SO-11) | 11 |
-| Worker agents (A01 … A57) | 57 |
-| **Total** | **69** |
+| Worker agents | 56 |
+| **Total** | **68** |
 
 | Sub-tree | Workers |
 |---|---:|
-| SO-1 · Ingestion | 7 |
+| SO-1 · Ingestion | 8 |
 | SO-2 · Platform Harness | 8 |
 | SO-3 · Matching Engine | 8 |
 | SO-4 · GST | 3 |
-| SO-5 · Close | 4 |
+| SO-5 · Close | 5 |
 | SO-6 · Policy & Memory | 4 |
 | SO-7 · Pipeline & API | 5 |
 | SO-8 · Interface | 5 |
-| SO-9 · Sponsor Integrations | 5 |
+| SO-9 · Sponsor Integrations | 2 |
 | SO-10 · Data & Evaluation | 4 |
 | SO-11 · QA & Submission | 4 |
 
@@ -944,7 +948,7 @@ them. Every task file names the owning agent, its files, its deliverable, and it
 
 | Criterion | Weight | Where it's earned |
 |---|---|---|
-| **AO Usage & Build Process** | 25% | §5 + §17 — `.ao/` rules committed first, 57 parallel worktree PRs, `AO-SESSIONS.md`, commit trailers, AO dashboard on camera. AO isn't decoration here; a 10-hour build of this size is only possible because of it |
+| **AO Usage & Build Process** | 25% | §5 + §17 — `.ao/` rules committed first, 56 parallel worktree PRs, `AO-SESSIONS.md`, commit trailers, AO dashboard on camera. AO isn't decoration here; a 10-hour build of this size is only possible because of it |
 | **Technical Execution & Reliability** | 25% | §4 harnesses, §11 eval gate with unsafe-auto-resolve = 0, §13 hash-chained audit, §14 controls, chaos demo |
 | **Track Fit & Real-World Value** | 25% | Four genuine Office-of-the-CFO workflows, full exception taxonomy, human review gates, evidence packs, close readiness |
 | **Demo & Usability** | 15% | §15 — one hero case, one learning proof, one reliability proof, in 3 minutes |
@@ -957,9 +961,9 @@ them. Every task file names the owning agent, its files, its deliverable, and it
 **Must ship:** canonical store · card normalization · cash matching incl. 1:many · GST reconciliation ·
 Ops↔ERP↔Bank close matching · exception queue · confidence + evidence · approve/edit/reject/defer ·
 rule memory · hash-chained audit · evidence packs · close-readiness dashboard · chaos ·
-Neatlogs · TensorMux · Dodo webhooks · eval scorecard · AO evidence
+Neatlogs · TensorMux · processor payout reconciliation · eval scorecard · AO evidence
 
-**Stretch:** real vendor email send · live ERP/bank connectors · richer FX depth ·
+**Stretch:** live Dodo Payments webhook ingestion (HMAC verify + idempotent handler) · real vendor email send · live ERP/bank connectors · richer FX depth ·
 automatic journal generation · remittance PDF extraction · second failure-analysis→fix→re-score cycle
 
 **Do not build:** authentication of any kind · 2FA · RBAC · multi-tenancy · replay harness · general-ledger
@@ -986,6 +990,10 @@ how good the build is.
 | Hackathon pass (post it, tag AO) | https://aoagents.dev/hackathons/syndicate/pass/ |
 | TensorMux key | https://app.tensormux.com |
 | AI Grants India — GPT-5 Nano / credits | https://aigrants.in/form?ref=ao |
+| Neatlogs key | https://neatlogs.com |
+
+Dodo Payments is the credits partner, **not** a submission requirement — it appears in none of
+the eleven rules and no rubric line.
 
 **Every team member registers individually. One official submission per team.**
 

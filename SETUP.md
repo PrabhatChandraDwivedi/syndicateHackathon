@@ -21,25 +21,27 @@ Already present on this machine:
 | Docker | 29.6.1 | Not required |
 | OBS | installed | Demo video recording |
 
-Still missing:
-
-| Missing | Needed for | Fix |
-|---|---|---|
-| **A tunnel** (ngrok / cloudflared) | Dodo webhooks reaching `localhost:8000` | `winget install Cloudflare.cloudflared` then `cloudflared tunnel --url http://localhost:8000` |
-| **Neatlogs API key** | H9 tracing — the audit→reasoning link | Sign up at neatlogs.com, copy project key |
-| **Dodo test account** | §8 payment feed | Ask in `#syndicate-help` for same-day verification |
-
-Keys you already have: **TensorMux** (`tmx_…`) and **OpenAI**.
+**Nothing is missing.** All three keys are in hand: **TensorMux** (`tmx_…`), **OpenAI**, and
+**Neatlogs**. No tunnel is needed — live Dodo webhooks were dropped (see below), so every source is
+a local file and the whole system runs offline.
 
 > **Use the OpenAI key as the router's secondary provider.** TensorMux exposes one model
 > (`glm-4-7-flash`), so the fallback chain is `TensorMux → OpenAI → degrade case to queued`. That
 > makes the chaos harness's "LLM 500" injection a real test instead of a mocked one.
 
+> **Dodo Payments is dropped from the critical path.** It is the hackathon's credits partner, not a
+> scored integration — it appears in none of the eleven rules and no rubric line. It was the only
+> sub-tree needing an external account and a public tunnel, and a live webhook mid-recording is a
+> demo risk for zero marginal points. The *finance content* is kept: processor fee and settlement-
+> timing differences are reconciled from a **payout report CSV** (`app/adapters/payout_report.py`).
+> Live webhook ingestion is specified and sits in Stretch — adding it later is one new source, not
+> an architectural change.
+
 ---
 
 ## 2. Repo bootstrap — MO does this first, alone
 
-Fifty-seven agents cannot start until these exist. Anything here that's missing becomes a race
+The 56 worker agents cannot start until these exist. Anything here that's missing becomes a race
 between agents to create the same file.
 
 Already committed:
@@ -54,14 +56,14 @@ Still owed by MO **before dispatch**:
 
 | Item | Why it blocks |
 |---|---|
-| `app/models/` — Pydantic models for every §3 entity | Every one of the 57 agents imports these |
+| `app/models/` — Pydantic models for every §3 entity | Every one of the 56 workers imports these |
 | `app/db/schema.sql` + migration runner | Same |
 | `app/harness/audit.py` hash-chain writer | Referenced by policy, pipeline, API, evals |
 | OpenAPI stub for every §12 route | Lets SO-8 (UI) build against a mock instead of waiting on SO-7 |
 | **Package skeleton** — every directory in §16 with `__init__.py` | Otherwise agents race to create the same folders and collide on imports |
 | `tests/conftest.py`, `pytest.ini` | Workers must ship tests; they need the fixtures to exist |
 | `.github/workflows/ci.yml` | AO fixes CI automatically, but only if CI exists |
-| `.ao/tasks/A01.md … A57.md` | One task file per worker — this is also your AO evidence trail |
+| `.ao/tasks/` — one file per worker (56) | Your AO evidence trail |
 
 Bootstrap commands:
 
@@ -87,13 +89,12 @@ What each harness needs to exist before its owning agent can build it.
 | H6 Evals | A51 | pandas | — | policy (safety metric) |
 | H7 Chaos | A12 | stdlib | — | ingestion + router |
 | H8 Notifications | A13 | httpx | `SLACK_WEBHOOK_URL` *(optional)* | — |
-| H9 Neatlogs | A45 | `neatlogs` | **`NEATLOGS_API_KEY`** | account signup |
+| H9 Neatlogs | A45 | `neatlogs` | `NEATLOGS_API_KEY` ✓ | ready now |
 | H10 TensorMux router | A46 | `openai` | `TENSORMUX_*` ✓, `OPENAI_API_KEY` ✓ | ready now |
 | H11 Audit + evidence | A14/A15 | stdlib | — | models |
+| Payout report adapter | A47 | pandas | — | models |
 
-**Dodo** (A47/A48/A49) additionally needs `DODO_API_KEY`, `DODO_WEBHOOK_SECRET`, and a running
-tunnel. It is the only sub-tree with an external dependency that can't be resolved on this machine
-right now — sequence it last within SO-9.
+**Every harness is unblocked.** No sub-tree waits on an external account or a network call.
 
 ### Two ordering traps
 
@@ -123,12 +124,11 @@ video must show the AO dashboard. Starting AO late makes the evidence look retro
 ## 5. Order of operations
 
 ```
-1. Fill .env  (TensorMux ✓, OpenAI ✓, Neatlogs ⨯, Dodo ⨯)
+1. Fill .env  (TensorMux ✓, OpenAI ✓, Neatlogs ✓)
 2. uv venv && uv pip install -r requirements.txt
 3. MO builds the contract  → models, schema, audit writer, OpenAPI stub,
                              package skeleton, conftest, CI
-4. MO writes .ao/tasks/A01..A57.md
+4. MO writes the 56 task files under .ao/tasks/
 5. MO merges the contract to main   ← nothing dispatches before this
-6. Dispatch SO-1 … SO-11 in parallel
-7. SO-9 sequences Dodo last (external dependency)
+6. Dispatch SO-1 … SO-11 in parallel — all eleven are unblocked
 ```
