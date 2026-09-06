@@ -2,12 +2,24 @@ from dataclasses import dataclass
 from typing import Optional
 
 
+def _f(value) -> float:
+    """Coerce a numeric-like value to a float, handling strings with commas and blanks."""
+    try:
+        if value is None:
+            return 0.0
+        s = str(value).replace(",", "").strip()
+        return float(s) if s != "" else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def norm_ref(ref: Optional[str]) -> str:
-    """Normalize a reference string to uppercase alphanumeric."""
+    """Normalize a reference string to uppercase, preserving hyphens.
+    Keeps alphanumeric characters and hyphen (-)."""
     if not ref:
         return ''
-    # Uppercase, strip whitespace, keep only A-Z and 0-9
-    return ''.join(ch for ch in ref.upper().strip() if ch.isalnum())
+    s = str(ref).strip().upper()
+    return ''.join(ch for ch in s if ch.isalnum() or ch == '-')
 
 
 @dataclass
@@ -29,60 +41,60 @@ def three_way_match(
     bank: list[dict],
     tolerance: float = 0.01,
 ) -> dict:
-    # Index rows by normalized reference (order_ref for ERP/OPS, reference_raw for Bank)
-    # First occurrence wins on duplicates
-    erp_index = {}
+    # Index ERP and Bank by normalized reference
+    erp_index: dict[str, dict] = {}
     for row in erp:
         key = norm_ref(row.get('order_ref'))
         if key and key not in erp_index:
             erp_index[key] = row
 
-    bank_index = {}
+    bank_index: dict[str, dict] = {}
     for row in bank:
         key = norm_ref(row.get('reference_raw'))
         if key and key not in bank_index:
             bank_index[key] = row
 
-    # Process OPS to find order_ref keys and derive amounts
-    # We process this first to build the ops_keys set for bank matching
-    ops_rows_data = []
-    ops_keys = set()
+    # OPS rows: collect keys and compute ops_net
+    ops_rows_data: list[dict] = []
+    ops_keys: set[str] = set()
     for row in ops:
         key = norm_ref(row.get('order_ref'))
         if key:
             ops_keys.add(key)
 
-        # Calculate ops_net
-        gross = float(row.get('gross_amount', 0))
-        fees = float(row.get('fees', 0))
+        gross = _f(row.get('gross_amount'))
+        fees = _f(row.get('fees'))
         net_raw = row.get('net_amount')
-        # Use net_amount if present, else gross - fees
-        ops_net = round(float(net_raw) if net_raw is not None else (gross - fees), 2)
+        has_net = not (net_raw is None or (isinstance(net_raw, str) and net_raw.strip() == ''))
+        if has_net:
+            ops_net = round(_f(net_raw), 2)
+        else:
+            ops_net = round(gross - fees, 2)
+
         ops_rows_data.append({'key': key, 'ops_net': ops_net})
 
-    # Collect unexplained bank
+    # Bank rows that did not map to OPS
     unexplained_bank_ids = []
     for b_key, b_row in bank_index.items():
         if b_key not in ops_keys:
             unexplained_bank_ids.append(b_row.get('id', ''))
 
-    # Build CloseRows
     closed_count = 0
     partial_count = 0
     orphan_count = 0
     total_count = 0
 
-    close_rows = []
+    close_rows: list[CloseRow] = []
     for ops_data in ops_rows_data:
         key = ops_data['key']
         ops_net = ops_data['ops_net']
 
         erp_entry = erp_index.get(key)
-        erp_amt = erp_entry.get('amount', 0) if erp_entry else 0.0
+        erp_amt = _f(erp_entry.get('amount', 0)) if erp_entry else 0.0
         erp_id = erp_entry.get('id') if erp_entry else None
 
         bank_entry = bank_index.get(key)
-        bank_amt = bank_entry.get('amount', 0) if bank_entry else 0.0
+        bank_amt = _f(bank_entry.get('amount', 0)) if bank_entry else 0.0
         bank_id = bank_entry.get('id') if bank_entry else None
 
         variance = round(ops_net - bank_amt, 2)
