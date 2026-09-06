@@ -25,9 +25,11 @@ Already present on this machine:
 **Neatlogs**. No tunnel is needed — live Dodo webhooks were dropped (see below), so every source is
 a local file and the whole system runs offline.
 
-> **Use the OpenAI key as the router's secondary provider.** TensorMux exposes one model
-> (`glm-4-7-flash`), so the fallback chain is `TensorMux → OpenAI → degrade case to queued`. That
-> makes the chaos harness's "LLM 500" injection a real test instead of a mocked one.
+> **OpenAI is primary, TensorMux is the fallback leg.** The chain is
+> `OpenAI → TensorMux → degrade case to queued`, which makes the chaos harness's "LLM 500"
+> injection a real test rather than a mocked one. Both keys are verified working against their live
+> endpoints. Flip the order in `config/models.yaml` if OpenAI spend becomes a concern — TensorMux's
+> 50M tokens are free.
 
 > **Dodo Payments is dropped from the critical path.** It is the hackathon's credits partner, not a
 > scored integration — it appears in none of the eleven rules and no rubric line. It was the only
@@ -90,7 +92,7 @@ What each harness needs to exist before its owning agent can build it.
 | H7 Chaos | A12 | stdlib | — | ingestion + router |
 | H8 Notifications | A13 | httpx | `SLACK_WEBHOOK_URL` *(optional)* | — |
 | H9 Neatlogs | A45 | `neatlogs` | `NEATLOGS_API_KEY` ✓ | ready now |
-| H10 TensorMux router | A46 | `openai` | `TENSORMUX_*` ✓, `OPENAI_API_KEY` ✓ | ready now |
+| H10 Model router | A46 | `openai` | `OPENAI_API_KEY` ✓, `TENSORMUX_*` ✓ | ready now |
 | H11 Audit + evidence | A14/A15 | stdlib | — | models |
 | Payout report adapter | A47 | pandas | — | models |
 

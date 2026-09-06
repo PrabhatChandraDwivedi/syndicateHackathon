@@ -130,7 +130,7 @@ flowchart TB
 | Matching | pandas, RapidFuzz, bounded subset-sum | Deterministic, explainable, no vector DB. |
 | Jobs | APScheduler + SQLite `outbox` table | Continuous close without infrastructure. |
 | Frontend | **Vite + React + Tailwind**, 5 screens | Fast, no auth, reads the same REST API the agent writes to. |
-| Inference | **TensorMux** (OpenAI-compatible) | Routing + metering, see §7. |
+| Inference | **OpenAI** primary, **TensorMux** fallback | Both OpenAI-compatible. Routing, fallback + cost metering, see §7. |
 | Tracing | **Neatlogs** | See §6. |
 | Processor feed | **Payout report CSV** | See §8. No external dependency, no tunnel, no live call during the demo. |
 | Dev orchestration | **AO** | See §5 and §17. Mandatory. |
@@ -348,44 +348,44 @@ this many agents we can run it more than once.
 
 ---
 
-## 7. TensorMux — inference, routing & cost metering
+## 7. Model router — OpenAI primary, TensorMux fallback
 
-Inference partner for the hackathon. No credit card and no personal model key required.
+Two providers, both OpenAI-compatible, behind one client interface. **OpenAI is primary**;
+**TensorMux is the fallback leg** and the hackathon's inference partner.
 
-**Setup:** sign in at `app.tensormux.com` with Google or GitHub, copy the API key (starts with
-`tmx_`). Each key is activated with **50 million tokens** — effectively unlimited for this build.
-Top-ups available via `syndicate-help` on Discord.
-
-```
-Base URL: https://api.tensormux.com/v1
-Model:    glm-4-7-flash
-```
-
-OpenAI-compatible, so it drops in behind one base URL:
+| Role | Provider | Model | Notes |
+|---|---|---|---|
+| **Primary** | OpenAI | `gpt-4o-mini` (bulk), `gpt-4.1` (reasoning-heavy) | Stronger instruction-following and reliable structured output, which the guardrail layer (H4) depends on |
+| **Fallback** | TensorMux | `glm-4-7-flash` | 50M free tokens, `https://api.tensormux.com/v1`. Sign in at `app.tensormux.com`; key starts `tmx_` |
+| **Last resort** | — | — | Degrade the case to `queued`. The pipeline never dies on an LLM outage |
 
 ```python
-client = OpenAI(base_url=os.environ["TENSORMUX_BASE_URL"],   # https://api.tensormux.com/v1
-                api_key=os.environ["TENSORMUX_API_KEY"])     # tmx_...
+primary  = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+fallback = OpenAI(base_url=os.environ["TENSORMUX_BASE_URL"],
+                  api_key=os.environ["TENSORMUX_API_KEY"])
 ```
+
+Because both are OpenAI-compatible, swapping the order is a `models.yaml` edit — no call-site change.
 
 ### Routing policy (`config/models.yaml`)
 
-TensorMux exposes **a single model** for the hackathon, so the router does not split traffic across
-model tiers today. It still exists, and still earns its place, because it owns three things:
-
 | Concern | What the router does |
 |---|---|
-| **Task profiles** | Each call site declares a profile (`classify`, `disambiguate`, `select`, `draft`, `narrate`) carrying its own temperature, max-tokens, timeout and retry budget. Cheap closed-label tasks get tight budgets; the cash-application shortlist gets a generous one |
-| **Fallback chain** | Primary `glm-4-7-flash` → secondary provider if configured → **degrade the case to `queued`**. The pipeline never dies on an LLM outage, which is exactly what the chaos harness (H7) injects |
+| **Task profiles** | Each call site declares a profile (`classify`, `disambiguate`, `select`, `draft`, `narrate`) with its own model, temperature, max-tokens, timeout and retry budget. Closed-label tasks get `gpt-4o-mini` and tight budgets; the cash-application shortlist gets `gpt-4.1` and a generous one |
+| **Fallback chain** | OpenAI → TensorMux → **degrade the case to `queued`**. This is exactly what the chaos harness (H7) injects with its LLM-500 failure |
 | **Cost metering** | Per-call tokens and cost land on the case (`token_cost_usd`), aggregated into the KPI **"cost per exception resolved"** |
 
-The profile abstraction means a second model can be added by editing `models.yaml` alone — no call
-site changes. That is the honest version of "routing" given one available model, and it is the
-version that ships.
+### Two implementation notes for A46
 
-- **Deterministic-first is a cost strategy, not just an accuracy one.** The dashboard shows
-  `% of cases resolved with zero LLM calls`, and that number rises between Run 1 and Run 2 as
-  learned rules displace model calls.
+1. **`glm-4-7-flash` is a reasoning model that returns its thinking in a separate `reasoning`
+   field.** On a tight `max_tokens` it returns `content: null` with `finish_reason: "length"` and
+   the answer stranded in `reasoning`. The fallback leg must budget generously and **must not treat
+   empty `content` as failure** — check `reasoning` too, and only degrade to `queued` when both are
+   empty. Verified against the live endpoint.
+2. **OpenAI is billed pay-as-you-go.** Deterministic-first is therefore a cost strategy as well as
+   an accuracy one: the dashboard shows `% of cases resolved with zero LLM calls`, and that number
+   rises between Run 1 and Run 2 as learned rules displace model calls. If spend becomes a concern,
+   flip the order in `models.yaml` — TensorMux's 50M tokens are free.
 
 ---
 
@@ -851,7 +851,7 @@ One bounded unit of work, an explicit file list, unit tests, one PR. Never edits
 | ID | Owns | Deliverable |
 |---|---|---|
 | A45 | `app/integrations/neatlogs.py` | **§6** — WORKFLOW span per run, child span per tool call, span per LLM call, guardrail rejections as error events, `neatlogs_trace_id` propagated onto cases, runs and audit events |
-| A46 | `app/integrations/tensormux.py`, `config/models.yaml` | **§7** — OpenAI-compatible client, task-profile routing, **TensorMux → OpenAI → degrade-to-`queued`** fallback chain, per-call token and cost metering onto the case |
+| A46 | `app/integrations/tensormux.py`, `config/models.yaml` | **§7** — OpenAI-compatible client, task-profile routing, **OpenAI → TensorMux → degrade-to-`queued`** fallback chain, per-call token and cost metering onto the case |
 
 #### SO-10 · Data & Evaluation — 4 workers
 **Owns:** `seed/generate.py`, `evals/`
