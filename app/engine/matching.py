@@ -68,10 +68,11 @@ def match_one(
     best_match: Optional[Match] = None
     best_conf = -1.0
     best_delta = float('inf')
+    best_key: Optional[tuple] = None
 
     for target in targets:
         amount_exact = source.amount is not None and target.amount is not None and abs(source.amount - target.amount) <= amount_tolerance
-        reference_exact = False  # No reference field
+        reference_exact = bool(source.reference) and bool(target.reference) and source.reference == target.reference
         merchant_match = (source.merchant_id is not None and 
                           target.merchant_id is not None and 
                           source.merchant_id == target.merchant_id)
@@ -80,8 +81,10 @@ def match_one(
         score = score_match(amount_exact, reference_exact, merchant_match, delta, date_tolerance_days)
         conf = score['confidence']
         
-        # Tie break toward smaller date delta
-        if best_match is None or conf > best_conf or (conf == best_conf and delta < best_delta):
+        # Rank candidates by (reference_exact, confidence, -date_delta)
+        key = (reference_exact, conf, -delta)
+        if best_match is None or key > best_key:
+            best_key = key
             best_conf = conf
             best_delta = delta
             

@@ -114,6 +114,19 @@ def normalize_date(value: str | None) -> str | None:
         return None
 
 
+# 1. normalize_reference
+def normalize_reference(raw: str | None) -> str:
+    """
+    Normalize a raw payment reference by uppercasing and removing
+    all characters not in A-Z or 0-9. Returns '' for None or blank.
+    """
+    if not raw or not str(raw).strip():
+        return ""
+    s = str(raw).upper()
+    s = re.sub(r'[^A-Z0-9]', '', s)
+    return s
+
+
 # 5. NormalizedTransaction
 class NormalizedTransaction(BaseModel):
     id: str
@@ -124,6 +137,7 @@ class NormalizedTransaction(BaseModel):
     amount: Optional[float] = None
     date: Optional[str] = None
     currency: Optional[str] = None
+    reference: str = ''
 
 
 # 6. resolve_merchant
@@ -209,5 +223,6 @@ def normalize_transaction(
         merchant_confidence=confidence,
         amount=amount,
         date=date,
-        currency=currency
+        currency=currency,
+        reference=normalize_reference(txn.reference_raw)
     )
