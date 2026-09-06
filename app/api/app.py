@@ -15,6 +15,14 @@ from app.memory.rules import RuleStore
 from app.harness.audit import AuditWriter
 from app.harness.tracing import trace_id
 
+from app.engine.gst import reconcile_gst
+from app.engine.close import three_way_match
+from app.adapters.csv_source import load_csv
+from seed.generate import generate
+
+# Data directory used by GST/Close endpoints and the pipeline
+DATA_DIR = os.environ.get('DATA_DIR', './seed/data')
+
 # Global state
 STATE: dict = {
     'run': None,
@@ -23,6 +31,7 @@ STATE: dict = {
     'audit_events': []
 }
 
+# FastAPI application
 app = FastAPI(title='ReconcileOS')
 
 
@@ -36,9 +45,11 @@ def get_audit_writer() -> AuditWriter:
     return aw
 
 
-def _safe_run_pipeline(rules_path: Optional[str] = None):
+def _safe_run_pipeline(rules_path: Optional[str] = None, data_dir: Optional[str] = None):
+    # Use the module-level DATA_DIR by default to keep datasets in sync
+    dir_to_use = data_dir if data_dir is not None else DATA_DIR
     # Attempt to call the new signature if present; fall back to legacy if needed
-    base_kw = {'db_path': ':memory:', 'data_dir': './seed/data', 'policy_path': None}
+    base_kw = {'db_path': ':memory:', 'data_dir': dir_to_use, 'policy_path': None}
     try:
         sig = inspect.signature(run_pipeline)
         # Build kwargs only from parameters that exist
@@ -49,7 +60,7 @@ def _safe_run_pipeline(rules_path: Optional[str] = None):
         return run_pipeline(**base_kw)
     except Exception:
         # Fallback to legacy call (best-effort)
-        return run_pipeline(db_path=':memory:', data_dir='./seed/data', policy_path=None)
+        return run_pipeline(db_path=':memory:', data_dir=dir_to_use, policy_path=None)
 
 
 def _get_run_rules_path() -> Optional[str]:
@@ -73,7 +84,7 @@ class DecisionInput(BaseModel):
 async def run_endpoint():
     # Pass through rules path so learned rules are honored
     rules_path = _get_run_rules_path()
-    run_result = _safe_run_pipeline(rules_path=rules_path)
+    run_result = _safe_run_pipeline(rules_path=rules_path, data_dir=DATA_DIR)
     STATE['run'] = run_result
     return {
         'run_id': run_result.get('run_id'),
@@ -259,3 +270,84 @@ async def health():
 async def admin_reset():
     STATE['run'] = None
     return {'reset': True}
+
+
+# NEW ENDPOINTS: GST and Month-Close workflows
+@app.get("/gst/reconcile")
+async def gst_reconcile_endpoint():
+    try:
+        # Ensure seed CSVs exist and load them
+        paths = generate(DATA_DIR)
+        purchase_path = paths.get('purchase_register')
+        gstr_path = paths.get('gstr2b')
+
+        purchase_rows = load_csv(purchase_path) if purchase_path else []
+        gstr_rows = load_csv(gstr_path) if gstr_path else []
+
+        # Run GST reconciliation
+        result = reconcile_gst(purchase_rows or [], gstr_rows or [], tolerance=1.0)
+
+        matched = result.get('matched')
+        itc_at_risk = result.get('itc_at_risk')
+        counts = result.get('counts', {})
+        exceptions = result.get('exceptions', [])
+
+        # Convert dataclasses to dicts and enrich with invoice_number and supplier_gstin
+        exs_out = []
+        for ex in exceptions:
+            ex_dict = asdict(ex)
+            purchase_row = ex_dict.get('purchase_row')
+            gstr_row = ex_dict.get('gstr_row')
+            invoice_number = ''
+            supplier_gstin = ''
+            if isinstance(purchase_row, dict):
+                invoice_number = purchase_row.get('invoice_number') or purchase_row.get('invoice') or ''
+                supplier_gstin = purchase_row.get('supplier_gstin') or ''
+            if not invoice_number and isinstance(gstr_row, dict):
+                invoice_number = gstr_row.get('invoice_number') or gstr_row.get('invoice') or ''
+                if not supplier_gstin:
+                    supplier_gstin = gstr_row.get('supplier_gstin') or ''
+            ex_dict['invoice_number'] = invoice_number
+            ex_dict['supplier_gstin'] = supplier_gstin
+            exs_out.append(ex_dict)
+
+        return {
+            'matched': matched,
+            'itc_at_risk': itc_at_risk,
+            'counts': counts,
+            'exceptions': exs_out
+        }
+    except Exception as e:
+        return {'error': str(e), 'matched': 0, 'itc_at_risk': 0.0, 'counts': {'purchase': 0, 'gstr2b': 0}, 'exceptions': []}
+
+
+@app.get("/close/status")
+async def close_status_endpoint():
+    try:
+        # Ensure seed CSVs exist and load them
+        paths = generate(DATA_DIR)
+        ops_path = paths.get('ops')
+        erp_path = paths.get('erp')
+        settlements_path = paths.get('settlements')
+
+        ops_rows = load_csv(ops_path) if ops_path else []
+        erp_rows = load_csv(erp_path) if erp_path else []
+        settlements_rows = load_csv(settlements_path) if settlements_path else []
+
+        result = three_way_match(ops_rows or [], erp_rows or [], settlements_rows or [], tolerance=0.01)
+
+        rows = result.get('rows', [])
+        rows_out = [asdict(r) for r in rows]
+
+        summary = result.get('summary', {})
+        readiness = result.get('readiness', 0.0)
+        unexplained_bank = result.get('unexplained_bank', [])
+
+        return {
+            'summary': summary,
+            'readiness': readiness,
+            'unexplained_bank': unexplained_bank,
+            'rows': rows_out
+        }
+    except Exception as e:
+        return {'error': str(e), 'summary': {'closed': 0, 'partial': 0, 'orphan': 0, 'total': 0}, 'readiness': 0.0, 'unexplained_bank': [], 'rows': []}
