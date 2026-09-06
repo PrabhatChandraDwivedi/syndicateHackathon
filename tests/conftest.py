@@ -23,9 +23,16 @@ def _try_import_app():
     except Exception:
         return None
 
-api = _try_import_app()
+try:
+    api = _try_import_app()
+except Exception:
+    api = None
 if api is None:
-    raise ModuleNotFoundError("Could not import app.api.app for tests. Ensure repository root is on PYTHONPATH and app package is importable.")
+    # Deterministic fallback: import via absolute import from known surface
+    try:
+        from app.api import app as api  # type: ignore
+    except Exception:
+        raise ModuleNotFoundError("Could not import app.api.app for tests. Ensure repository root is on PYTHONPATH and app package is importable.")
 
 import pytest
 
