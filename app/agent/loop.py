@@ -6,8 +6,7 @@ from typing import List
 
 from app.harness.tools import ToolRegistry, ToolCall, ToolError
 from app.harness.modelrouter import ModelRouter
-from app.harness.tracing import span
-
+from app.harness.tracing import span, child_span, detect, event, flush
 
 MAX_STEPS_DEFAULT = 10
 
@@ -111,97 +110,106 @@ class ReconciliationAgent:
             context = {}
 
         for i in range(1, self.max_steps + 1):
-            system_prompt = build_system_prompt(self.registry, goal)
-            transcript_parts: List[str] = []
-            for s in steps:
-                transcript_parts.append(
-                    f"Step {s.n}: thought={s.thought}, tool={s.tool}, args={s.args}, error={s.error}, observation={s.observation}"
-                )
-            transcript = "\n".join(transcript_parts)
-
-            context_json = json.dumps(context) if isinstance(context, dict) else "{}"
-            prompt = system_prompt
-            if transcript:
-                prompt += "\nTranscript:\n" + transcript
-            prompt += "\nContext: " + context_json
-
-            if self.router is None:
-                stopped_reason = 'no_router'
-                completed = False
-                break
-
-            try:
-                resp = self.router.complete(prompt, max_tokens=1000)
-            except Exception:
-                stopped_reason = 'router_error'
-                completed = False
-                break
-
-            text = resp.get('text', '') if isinstance(resp, dict) else ''
-            action = parse_action(text)
-
-            if 'parse_error' in action:
-                steps.append(
-                    Step(
-                        n=i,
-                        thought=action.get('thought', ''),
-                        tool=action.get('tool'),
-                        args=action.get('args', {}),
-                        observation=None,
-                        error=action.get('parse_error'),
+            with child_span(name=f'agent_step_{i}', kind='AGENT'):
+                system_prompt = build_system_prompt(self.registry, goal)
+                transcript_parts: List[str] = []
+                for s in steps:
+                    transcript_parts.append(
+                        f"Step {s.n}: thought={s.thought}, tool={s.tool}, args={s.args}, error={s.error}, observation={s.observation}"
                     )
-                )
-                parse_error_streak += 1
-                if parse_error_streak >= 2:
-                    stopped_reason = 'parse_failures'
+                transcript = "\n".join(transcript_parts)
+
+                context_json = json.dumps(context) if isinstance(context, dict) else "{}"
+                prompt = system_prompt
+                if transcript:
+                    prompt += "\nTranscript:\n" + transcript
+                prompt += "\nContext: " + context_json
+
+                if self.router is None:
+                    stopped_reason = 'no_router'
                     completed = False
                     break
-                continue
 
-            parse_error_streak = 0
+                try:
+                    resp = self.router.complete(prompt, max_tokens=1000)
+                except Exception as e:
+                    stopped_reason = 'router_error'
+                    completed = False
+                    detect('model call failed', step=i, error=str(e))
+                    break
 
-            if action.get('done', False):
-                steps.append(
-                    Step(
-                        n=i,
-                        thought=action.get('thought', ''),
-                        tool=None,
-                        args=action.get('args', {}),
-                        observation=None,
-                        error=None,
+                text = resp.get('text', '') if isinstance(resp, dict) else ''
+                action = parse_action(text)
+
+                thought = action.get('thought', '') if isinstance(action, dict) else ''
+                thought_trunc = thought[:200] if isinstance(thought, str) else ''
+                tool_name = action.get('tool')
+                event('agent step', step=i, tool=tool_name, thought=thought_trunc)
+
+                if 'parse_error' in action:
+                    steps.append(
+                        Step(
+                            n=i,
+                            thought=action.get('thought', ''),
+                            tool=action.get('tool'),
+                            args=action.get('args', {}),
+                            observation=None,
+                            error=action.get('parse_error'),
+                        )
                     )
-                )
-                completed = True
-                stopped_reason = 'done'
-                final_summary = action.get('summary', '')
-                break
+                    parse_error_streak += 1
+                    if parse_error_streak >= 2:
+                        stopped_reason = 'parse_failures'
+                        completed = False
+                        break
+                    # After a parse error, continue to next iteration
+                    detect('agent response unparseable', step=i)
+                    continue
 
-            tool_name = action.get('tool')
-            tool_args = action.get('args', {})
-            # Always record the requested tool name, even if it is unknown
-            step = Step(n=i, thought=action.get('thought', ''), tool=tool_name, args=tool_args, observation=None, error=None)
-            steps.append(step)
+                parse_error_streak = 0
 
-            if tool_name is None:
-                # No tool to call; proceed to next iteration
-                continue
+                if action.get('done', False):
+                    steps.append(
+                        Step(
+                            n=i,
+                            thought=action.get('thought', ''),
+                            tool=None,
+                            args=action.get('args', {}),
+                            observation=None,
+                            error=None,
+                        )
+                    )
+                    completed = True
+                    stopped_reason = 'done'
+                    final_summary = action.get('summary', '')
+                    break
 
-            tool_calls += 1
-            call = self.registry.call(tool_name, tool_args)
-            if call.ok:
-                step.observation = call.result
-            else:
-                step.observation = {'error': call.error}
-                step.error = call.error
-                # Ensure the tool field remains the requested tool name even on failure
-                step.tool = tool_name
+                tool_name = action.get('tool')
+                tool_args = action.get('args', {})
+                step = Step(n=i, thought=action.get('thought', ''), tool=tool_name, args=tool_args, observation=None, error=None)
+                steps.append(step)
 
-            # After a tool call, proceed to next iteration
-            # If this was the last allowed step, fall through to max_steps
-            if i == self.max_steps:
-                stopped_reason = 'max_steps'
-                completed = False
-                break
+                if tool_name is None:
+                    # No tool to call; proceed to next iteration
+                    continue
+
+                tool_calls += 1
+                call = self.registry.call(tool_name, tool_args)
+                if call.ok:
+                    step.observation = call.result
+                else:
+                    step.observation = {'error': call.error}
+                    step.error = call.error
+                    # Ensure the tool field remains the requested tool name even on failure
+                    step.tool = tool_name
+
+                # After a tool call, proceed to next iteration
+                # If this was the last allowed step, fall through to max_steps
+                if i == self.max_steps:
+                    stopped_reason = 'max_steps'
+                    completed = False
+                    detect('agent hit max steps without finishing', steps=self.max_steps)
+                    break
         else:
             stopped_reason = 'max_steps'
             completed = False
@@ -225,4 +233,13 @@ class ReconciliationAgent:
             'tool_calls': tool_calls,
             'stopped_reason': stopped_reason,
         }
+
+        if completed:
+            summary_trunc = final_summary[:200] if isinstance(final_summary, str) else ''
+            event('agent completed', steps=len(steps), tool_calls=tool_calls, summary=summary_trunc)
+
+        try:
+            flush()
+        except Exception:
+            pass
         return result
