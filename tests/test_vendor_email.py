@@ -58,16 +58,33 @@ def test_draft_and_enqueue_no_outbox():
     assert 'error' in res
 
 
-def test_drafts_from_gst_filters():
+def test_drafts_from_gst_chases_both_supplier_faults():
+    """An unfiled invoice AND one filed at the wrong value both put input tax
+    credit at risk, so both are chased. A row that exists only in GSTR-2B is our
+    own bookkeeping gap, not the supplier's, so it is left alone."""
     gst_result = {'exceptions': [
         {'exception_type': 'missing_in_gstr2b', 'invoice_number': 'INV-1', 'supplier_gstin': 'ABC'},
+        {'exception_type': 'value_mismatch', 'invoice_number': 'INV-2', 'supplier_gstin': 'DEF',
+         'taxable_delta': 999.0, 'tax_delta': 179.82},
+        {'exception_type': 'missing_in_purchase_register', 'invoice_number': 'INV-9',
+         'supplier_gstin': 'XYZ'},
     ]}
     outbox = Outbox(":memory:")
     result = drafts_from_gst(gst_result, outbox)
-    assert result['drafted'] == 1
-    assert isinstance(result['drafts'], list)
-    assert len(result['drafts']) == 1
-    assert result['drafts'][0]['invoice_number'] == 'INV-1'
+    assert result['drafted'] == 2
+    drafted = {d['invoice_number'] for d in result['drafts']}
+    assert drafted == {'INV-1', 'INV-2'}
+    assert 'INV-9' not in drafted
+
+    # Each finding gets its own message, not one generic template.
+    subjects = {m['subject'] for m in outbox.pending()}
+    assert any('not reflected in GSTR-2B' in s for s in subjects)
+    assert any('different value' in s for s in subjects)
+
+    # A value mismatch chases only the difference, not the whole invoice.
+    mismatch = [m for m in outbox.pending() if 'different value' in m['subject']][0]
+    assert '999.00' in mismatch['body']
+    assert '179.82' in mismatch['body']
 
 
 def test_drafts_from_gst_limit():
