@@ -56,6 +56,7 @@ def draft_and_enqueue(
     if outbox is None:
         return {"ok": False, "error": "no outbox configured"}
 
+    # Build draft once and reuse its values for both enqueue and return
     draft = compose_draft(invoice_number, supplier_gstin, reason, taxable_value, tax_at_risk)
     try:
         draft_id = outbox.enqueue(

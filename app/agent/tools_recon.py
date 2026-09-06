@@ -7,6 +7,8 @@ from app.memory.rules import RuleStore
 from app.policy.engine import decide
 from pydantic import BaseModel, Field
 
+from app.agent.vendor_email import draft_and_enqueue, drafts_from_gst
+
 # Safety BLOCKED exception types
 BLOCKED = ('duplicate_transaction', 'amount_mismatch', 'split_payment')
 
@@ -56,14 +58,26 @@ class AskHumanArgs(BaseModel):
     question: str = Field(..., description='Question to present to a human')
 
 
-def build_registry(
-    state: dict,
-    policy: dict,
-    rules: RuleStore | None = None,
-    run_fn: Optional[Callable[[], dict]] = None,
-    gst_fn: Optional[Callable[[], dict]] = None,
-    close_fn: Optional[Callable[[], dict]] = None
-) -> ToolRegistry:
+# new: DraftVendorEmailArgs
+class DraftVendorEmailArgs(BaseModel):
+    invoice_number: str = Field(..., description='Invoice number')
+    supplier_gstin: str = Field(..., description='Supplier GSTIN')
+    reason: str = Field(..., description='Reason for chaser')
+    taxable_value: float = Field(0.0, description='Taxable value')
+    tax_at_risk: float = Field(0.0, description='Tax at risk')
+
+
+class DraftVendorEmailArgsLocal(DraftVendorEmailArgs):
+    pass
+
+
+def build_registry(state: dict,
+                   policy: dict,
+                   rules: RuleStore | None = None,
+                   run_fn: Optional[Callable[[], dict]] = None,
+                   gst_fn: Optional[Callable[[], dict]] = None,
+                   close_fn: Optional[Callable[[], dict]] = None,
+                   outbox=None) -> ToolRegistry:
     """
     Build and return a ToolRegistry wired with reconciliation tools.
 
@@ -73,6 +87,7 @@ def build_registry(
     - run_fn: injected callable that performs a reconciliation run and returns a dict with 'cases'
     - gst_fn: injected callable that performs GST reconciliation and returns a dict
     - close_fn: injected callable that performs month-close checks and returns a dict
+    - outbox: optional Outbox instance to enqueue drafts like vendor emails
     """
 
     registry = ToolRegistry()
@@ -271,7 +286,7 @@ def build_registry(
     registry.register(
         ToolSpec(
             name='resolve_case',
-            description='Attempt to auto-resolve a case following policy. If blocked or policy forbids auto-resolution, returns a refusal. The agent must not violate safety rules.',
+            description='Automatically resolve a case based on policy. This is a sensitive operation that may be blocked by safety rules.',
             args_model=ResolveCaseArgsLocal,
             fn=resolve_case,
             dangerous=True
@@ -381,6 +396,76 @@ def build_registry(
             description='Explicitly ask a human a question about a case. This tool surfaces uncertainty and stores the question for human input.',
             args_model=AskHumanArgsLocal,
             fn=ask_human,
+            dangerous=True
+        )
+    )
+
+    # 11. draft_vendor_email
+    class DraftVendorEmailArgsLocal(DraftVendorEmailArgs):
+        pass
+
+    def draft_vendor_email(args: DraftVendorEmailArgsLocal) -> Dict[str, Any]:
+        if outbox is None:
+            return {'ok': False, 'error': 'no outbox configured'}
+        try:
+            recipient = f'ap-{args.supplier_gstin.upper()}@vendor.invalid'
+            subject = f'Action required: GST invoice {args.invoice_number} not reflected in GSTR-2B'
+            body = (
+                f'This is a draft email to vendor about GST invoice not reflected in GSTR-2B. '
+                f'Invoice number: {args.invoice_number}. '
+                f'Supplier GSTIN: {args.supplier_gstin}. '
+                f'Taxable value: {args.taxable_value:.2f}. '
+                f'Tax at risk: {args.tax_at_risk:.2f}. '
+                f'This invoice does not appear in our GSTR-2B for the period so we cannot claim input tax credit. '
+                f'Reason: {args.reason}. Please confirm the filing status. '
+                f'This draft was prepared automatically and has not been sent.'
+            )
+            draft_res = draft_and_enqueue(outbox, args.invoice_number, args.supplier_gstin, args.reason,
+                                          args.taxable_value, args.tax_at_risk, case_id=None)
+            if isinstance(draft_res, dict):
+                ok = draft_res.get('ok', True)
+                if not ok:
+                    return {'ok': False, 'error': draft_res.get('error')}
+                draft_id = draft_res.get('draft_id')
+            else:
+                draft_id = draft_res
+            return {'ok': True, 'draft_id': int(draft_id) if isinstance(draft_id, (int, float)) else draft_id,
+                    'recipient': recipient, 'subject': subject, 'status': 'pending'}
+        except Exception as e:
+            return {'ok': False, 'error': str(e)}
+
+    registry.register(
+        ToolSpec(
+            name='draft_vendor_email',
+            description='Prepare a draft email to vendor about GST invoice not reflected in GSTR-2B. This tool only PREPARES a draft for human approval and never sends anything.',
+            args_model=DraftVendorEmailArgsLocal,
+            fn=draft_vendor_email,
+            dangerous=True
+        )
+    )
+
+    # 12. draft_all_gst_chasers
+    class DraftAllGstChasersArgs(BaseModel):
+        limit: int = Field(10, ge=1, description='Maximum number of GST chasers to draft')
+
+    def draft_all_gst_chasers(args: DraftAllGstChasersArgs) -> Dict[str, Any]:
+        if outbox is None:
+            return {'ok': False, 'error': 'no outbox configured'}
+        gst = state.get('gst')
+        if gst is None:
+            return {'ok': False, 'error': 'run reconcile_gst first'}
+        try:
+            drafts_result = drafts_from_gst(gst, outbox, limit=args.limit)
+            return {'ok': True, 'drafted': drafts_result.get('drafted'), 'drafts': drafts_result.get('drafts')}
+        except Exception as e:
+            return {'ok': False, 'error': str(e)}
+
+    registry.register(
+        ToolSpec(
+            name='draft_all_gst_chasers',
+            description='Draft GST chasers for unfiled invoices after GST check. This enqueues drafts for human review and does not send anything.',
+            args_model=DraftAllGstChasersArgs,
+            fn=draft_all_gst_chasers,
             dangerous=True
         )
     )

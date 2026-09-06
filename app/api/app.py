@@ -50,7 +50,8 @@ STATE: dict = {
     'close': None,
     'tool_history': [],
     'agent_last': None,
-    'goal': DEFAULT_GOAL
+    'goal': DEFAULT_GOAL,
+    'outbox': None
 }
 
 
@@ -545,6 +546,11 @@ async def admin_reset():
     STATE['close'] = None
     STATE['tool_history'] = []
     STATE['agent_last'] = None
+    # Recreate the outbox
+    try:
+        STATE['outbox'] = Outbox(os.environ.get('OUTBOX_PATH', './data/outbox.db'))
+    except Exception:
+        STATE['outbox'] = None
     return {'reset': True}
 
 
@@ -638,3 +644,68 @@ async def agent_last():
     else:
         STATE['agent'] = default_agent
         return default_agent
+
+
+# NEW: initialize outbox at import time
+try:
+    from app.harness.notify import Outbox
+    STATE['outbox'] = Outbox(os.environ.get('OUTBOX_PATH', './data/outbox.db'))
+except Exception:
+    STATE['outbox'] = None
+
+
+# NEW ENDPOINTS: outbox
+@app.get("/outbox")
+async def outbox_status():
+    try:
+        outbox = STATE.get('outbox')
+        if outbox is None:
+            return {'pending': [], 'stats': {}}
+        pending = outbox.pending(limit=50)
+        stats = outbox.stats()
+        return {'pending': pending, 'stats': stats}
+    except Exception as e:
+        return {'error': str(e), 'pending': [], 'stats': {}}
+
+
+@app.post("/outbox/{msg_id}/send")
+async def outbox_send(msg_id: str):
+    try:
+        outbox = STATE.get('outbox')
+        if outbox is None:
+            return {'msg_id': msg_id, 'status': 'not_initialized'}
+        pending = outbox.pending(limit=1000)
+        found = any((p.get('id') == msg_id or p.get('msg_id') == msg_id or p.get('message_id') == msg_id) for p in pending)
+        if not found:
+            return JSONResponse(status_code=404, content={'detail': 'message not found'})
+        outbox.mark_sent(msg_id)
+        return {'msg_id': msg_id, 'status': 'sent'}
+    except Exception as e:
+        return {'error': str(e), 'msg_id': msg_id}
+
+
+@app.post("/outbox/send-all")
+async def outbox_send_all():
+    try:
+        outbox = STATE.get('outbox')
+        if outbox is None:
+            return {'attempted': 0, 'sent': 0, 'failed': 0}
+
+        pending = outbox.pending(limit=10000)
+        attempted = len(pending)
+        sent = 0
+        failed = 0
+        for m in pending:
+            mid = m.get('id') or m.get('msg_id') or m.get('message_id') or m.get('msgId')
+            if mid is None:
+                failed += 1
+                continue
+            try:
+                outbox.mark_sent(mid)
+                sent += 1
+            except Exception:
+                failed += 1
+
+        return {'attempted': attempted, 'sent': sent, 'failed': failed}
+    except Exception as e:
+        return {'error': str(e), 'attempted': 0, 'sent': 0, 'failed': 0}
