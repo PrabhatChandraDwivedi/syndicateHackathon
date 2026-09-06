@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import time
 from typing import Optional
 
 import os
@@ -23,16 +24,26 @@ from seed.generate import generate
 # Data directory used by GST/Close endpoints and the pipeline
 DATA_DIR = os.environ.get('DATA_DIR', './seed/data')
 
+# Default agent goal
+DEFAULT_GOAL = ("You own the month-end close. Run the reconciliation, check GST against GSTR-2B, "
+                "and check the three-way month close. Review every open case: consult the learned rules "
+                "and the policy, resolve what is safe to resolve, ask the human when you are genuinely unsure, "
+                "and escalate anything that needs a person.")
+
 # Global state
 STATE: dict = {
     'run': None,
     'rules': RuleStore(os.environ.get('RULES_PATH', './data/rules.json')),
     'audit_writer': None,
-    'audit_events': []
+    'audit_events': [],
+    'agent': None,
+    'questions': [],
+    'gst': None,
+    'close': None,
+    'tool_history': [],
+    'agent_last': None,
+    'goal': DEFAULT_GOAL
 }
-
-# FastAPI application
-app = FastAPI(title='ReconcileOS')
 
 
 def get_audit_writer() -> AuditWriter:
@@ -80,6 +91,221 @@ class DecisionInput(BaseModel):
     note: Optional[str] = None
 
 
+# Internal helpers for agent integration
+
+def _build_agent_registry(run_fn, gst_fn, close_fn):
+    # Try to leverage a real registry if available; otherwise fall back to a lightweight entry
+    try:
+        # Best-effort: import a possible external builder; if unavailable, fall back
+        from agent_registry import build_registry  # type: ignore
+        registry = build_registry(STATE, None, rules=None, run_fn=run_fn, gst_fn=gst_fn, close_fn=close_fn)
+        STATE['agent'] = registry
+        return registry
+    except Exception:
+        # Lightweight fallback registry
+        reg = {
+            'run_fn': run_fn,
+            'gst_fn': gst_fn,
+            'close_fn': close_fn
+        }
+        STATE['agent'] = reg
+        return reg
+
+
+def _do_run_impl():
+    rules_path = _get_run_rules_path()
+    run_result = _safe_run_pipeline(rules_path=rules_path, data_dir=DATA_DIR)
+    STATE['run'] = run_result
+    STATE['agent_last'] = {'tool': 'run', 'result': run_result}
+    STATE.setdefault('tool_history', [])
+    STATE['tool_history'].append({'tool': 'run', 'result': run_result})
+    return run_result
+
+
+def _do_gst_impl():
+    # Load seed data and reconcile GST
+    paths = generate(DATA_DIR)
+    purchase_path = paths.get('purchase_register')
+    gstr_path = paths.get('gstr2b')
+
+    purchase_rows = load_csv(purchase_path) if purchase_path else []
+    gstr_rows = load_csv(gstr_path) if gstr_path else []
+
+    result = reconcile_gst(purchase_rows or [], gstr_rows or [], tolerance=1.0)
+
+    matched = result.get('matched')
+    itc_at_risk = result.get('itc_at_risk')
+    counts = result.get('counts', {})
+    exceptions = result.get('exceptions', [])
+
+    exs_out = []
+    for ex in exceptions:
+        ex_dict = asdict(ex)
+        purchase_row = ex_dict.get('purchase_row')
+        gstr_row = ex_dict.get('gstr_row')
+        invoice_number = ''
+        supplier_gstin = ''
+        if isinstance(purchase_row, dict):
+            invoice_number = purchase_row.get('invoice_number') or purchase_row.get('invoice') or ''
+            supplier_gstin = purchase_row.get('supplier_gstin') or ''
+        if not invoice_number and isinstance(gstr_row, dict):
+            invoice_number = gstr_row.get('invoice_number') or gstr_row.get('invoice') or ''
+            if not supplier_gstin:
+                supplier_gstin = gstr_row.get('supplier_gstin') or ''
+        ex_dict['invoice_number'] = invoice_number
+        ex_dict['supplier_gstin'] = supplier_gstin
+        exs_out.append(ex_dict)
+
+    gst_result = {
+        'matched': matched,
+        'itc_at_risk': itc_at_risk,
+        'counts': counts,
+        'exceptions': exs_out
+    }
+
+    STATE['gst'] = gst_result
+    STATE['agent_last'] = {'tool': 'gst', 'result': gst_result}
+    STATE.setdefault('tool_history', [])
+    STATE['tool_history'].append({'tool': 'gst', 'result': gst_result})
+
+    return gst_result
+
+
+def _do_close_impl():
+    try:
+        paths = generate(DATA_DIR)
+        ops_path = paths.get('ops')
+        erp_path = paths.get('erp')
+        settlements_path = paths.get('settlements')
+
+        ops_rows = load_csv(ops_path) if ops_path else []
+        erp_rows = load_csv(erp_path) if erp_path else []
+        settlements_rows = load_csv(settlements_path) if settlements_path else []
+
+        result = three_way_match(ops_rows or [], erp_rows or [], settlements_rows or [], tolerance=0.01)
+
+        rows = result.get('rows', [])
+        rows_out = [asdict(r) for r in rows]
+
+        summary = result.get('summary', {})
+        readiness = result.get('readiness', 0.0)
+        unexplained_bank = result.get('unexplained_bank', [])
+
+        close_result = {
+            'summary': summary,
+            'readiness': readiness,
+            'unexplained_bank': unexplained_bank,
+            'rows': rows_out
+        }
+
+        STATE['close'] = close_result
+        STATE['agent_last'] = {'tool': 'close', 'result': close_result}
+        STATE.setdefault('tool_history', [])
+        STATE['tool_history'].append({'tool': 'close', 'result': close_result})
+
+        return close_result
+    except Exception as e:
+        return {'error': str(e), 'summary': {'closed': 0, 'partial': 0, 'orphan': 0, 'total': 0}, 'readiness': 0.0, 'unexplained_bank': [], 'rows': []}
+
+
+# FastAPI application
+app = FastAPI(title='ReconcileOS')
+
+
+def _agent_run_sequence():
+    # Sequence of runs for the agent: run -> gst -> close
+    run_result = _do_run_impl()
+    gst_result = _do_gst_impl()
+    close_result = _do_close_impl()
+    return {
+        'run': run_result,
+        'gst': gst_result,
+        'close': close_result
+    }
+
+
+# NEW ENDPOINTS: GST and Month-Close workflows
+@app.get("/gst/reconcile")
+async def gst_reconcile_endpoint():
+    try:
+        # Ensure seed CSVs exist and load them
+        paths = generate(DATA_DIR)
+        purchase_path = paths.get('purchase_register')
+        gstr_path = paths.get('gstr2b')
+
+        purchase_rows = load_csv(purchase_path) if purchase_path else []
+        gstr_rows = load_csv(gstr_path) if gstr_path else []
+
+        # Run GST reconciliation
+        result = reconcile_gst(purchase_rows or [], gstr_rows or [], tolerance=1.0)
+
+        matched = result.get('matched')
+        itc_at_risk = result.get('itc_at_risk')
+        counts = result.get('counts', {})
+        exceptions = result.get('exceptions', [])
+
+        # Convert dataclasses to dicts and enrich with invoice_number and supplier_gstin
+        exs_out = []
+        for ex in exceptions:
+            ex_dict = asdict(ex)
+            purchase_row = ex_dict.get('purchase_row')
+            gstr_row = ex_dict.get('gstr_row')
+            invoice_number = ''
+            supplier_gstin = ''
+            if isinstance(purchase_row, dict):
+                invoice_number = purchase_row.get('invoice_number') or purchase_row.get('invoice') or ''
+                supplier_gstin = purchase_row.get('supplier_gstin') or ''
+            if not invoice_number and isinstance(gstr_row, dict):
+                invoice_number = gstr_row.get('invoice_number') or gstr_row.get('invoice') or ''
+                if not supplier_gstin:
+                    supplier_gstin = gstr_row.get('supplier_gstin') or ''
+            ex_dict['invoice_number'] = invoice_number
+            ex_dict['supplier_gstin'] = supplier_gstin
+            exs_out.append(ex_dict)
+
+        return {
+            'matched': matched,
+            'itc_at_risk': itc_at_risk,
+            'counts': counts,
+            'exceptions': exs_out
+        }
+    except Exception as e:
+        return {'error': str(e), 'matched': 0, 'itc_at_risk': 0.0, 'counts': {'purchase': 0, 'gstr2b': 0}, 'exceptions': []}
+
+
+@app.get("/close/status")
+async def close_status_endpoint():
+    try:
+        # Ensure seed CSVs exist and load them
+        paths = generate(DATA_DIR)
+        ops_path = paths.get('ops')
+        erp_path = paths.get('erp')
+        settlements_path = paths.get('settlements')
+
+        ops_rows = load_csv(ops_path) if ops_path else []
+        erp_rows = load_csv(erp_path) if erp_path else []
+        settlements_rows = load_csv(settlements_path) if settlements_path else []
+
+        result = three_way_match(ops_rows or [], erp_rows or [], settlements_rows or [], tolerance=0.01)
+
+        rows = result.get('rows', [])
+        rows_out = [asdict(r) for r in rows]
+
+        summary = result.get('summary', {})
+        readiness = result.get('readiness', 0.0)
+        unexplained_bank = result.get('unexplained_bank', [])
+
+        return {
+            'summary': summary,
+            'readiness': readiness,
+            'unexplained_bank': unexplained_bank,
+            'rows': rows_out
+        }
+    except Exception as e:
+        return {'error': str(e), 'summary': {'closed': 0, 'partial': 0, 'orphan': 0, 'total': 0}, 'readiness': 0.0, 'unexplained_bank': [], 'rows': []}
+
+
+# REST ENDPOINTS
 @app.post("/run")
 async def run_endpoint():
     # Pass through rules path so learned rules are honored
@@ -269,85 +495,51 @@ async def health():
 @app.post("/admin/reset")
 async def admin_reset():
     STATE['run'] = None
+    STATE['agent'] = None
+    STATE['questions'] = []
+    STATE['gst'] = None
+    STATE['close'] = None
+    STATE['tool_history'] = []
+    STATE['agent_last'] = None
     return {'reset': True}
 
 
-# NEW ENDPOINTS: GST and Month-Close workflows
-@app.get("/gst/reconcile")
-async def gst_reconcile_endpoint():
-    try:
-        # Ensure seed CSVs exist and load them
-        paths = generate(DATA_DIR)
-        purchase_path = paths.get('purchase_register')
-        gstr_path = paths.get('gstr2b')
+# NEW ENDPOINTS: agent-driven workflow
+@app.post("/agent/run")
+async def agent_run():
+    # Build internal registry for agent (best-effort)
+    def run_fn():
+        return _do_run_impl()
 
-        purchase_rows = load_csv(purchase_path) if purchase_path else []
-        gstr_rows = load_csv(gstr_path) if gstr_path else []
+    def gst_fn():
+        return _do_gst_impl()
 
-        # Run GST reconciliation
-        result = reconcile_gst(purchase_rows or [], gstr_rows or [], tolerance=1.0)
+    def close_fn():
+        return _do_close_impl()
 
-        matched = result.get('matched')
-        itc_at_risk = result.get('itc_at_risk')
-        counts = result.get('counts', {})
-        exceptions = result.get('exceptions', [])
+    _build_agent_registry(run_fn, gst_fn, close_fn)
 
-        # Convert dataclasses to dicts and enrich with invoice_number and supplier_gstin
-        exs_out = []
-        for ex in exceptions:
-            ex_dict = asdict(ex)
-            purchase_row = ex_dict.get('purchase_row')
-            gstr_row = ex_dict.get('gstr_row')
-            invoice_number = ''
-            supplier_gstin = ''
-            if isinstance(purchase_row, dict):
-                invoice_number = purchase_row.get('invoice_number') or purchase_row.get('invoice') or ''
-                supplier_gstin = purchase_row.get('supplier_gstin') or ''
-            if not invoice_number and isinstance(gstr_row, dict):
-                invoice_number = gstr_row.get('invoice_number') or gstr_row.get('invoice') or ''
-                if not supplier_gstin:
-                    supplier_gstin = gstr_row.get('supplier_gstin') or ''
-            ex_dict['invoice_number'] = invoice_number
-            ex_dict['supplier_gstin'] = supplier_gstin
-            exs_out.append(ex_dict)
+    run_result = run_fn()
+    gst_result = gst_fn()
+    close_result = close_fn()
 
-        return {
-            'matched': matched,
-            'itc_at_risk': itc_at_risk,
-            'counts': counts,
-            'exceptions': exs_out
-        }
-    except Exception as e:
-        return {'error': str(e), 'matched': 0, 'itc_at_risk': 0.0, 'counts': {'purchase': 0, 'gstr2b': 0}, 'exceptions': []}
+    return {
+        'run': run_result,
+        'gst': gst_result,
+        'close': close_result,
+        'questions': STATE.get('questions', []),
+        'tool_history': STATE.get('tool_history', [])
+    }
 
 
-@app.get("/close/status")
-async def close_status_endpoint():
-    try:
-        # Ensure seed CSVs exist and load them
-        paths = generate(DATA_DIR)
-        ops_path = paths.get('ops')
-        erp_path = paths.get('erp')
-        settlements_path = paths.get('settlements')
+@app.get("/agent/questions")
+async def agent_questions():
+    return {'questions': STATE.get('questions', [])}
 
-        ops_rows = load_csv(ops_path) if ops_path else []
-        erp_rows = load_csv(erp_path) if erp_path else []
-        settlements_rows = load_csv(settlements_path) if settlements_path else []
 
-        result = three_way_match(ops_rows or [], erp_rows or [], settlements_rows or [], tolerance=0.01)
+@app.get("/agent/last")
+async def agent_last():
+    return STATE.get('agent_last', {})
 
-        rows = result.get('rows', [])
-        rows_out = [asdict(r) for r in rows]
 
-        summary = result.get('summary', {})
-        readiness = result.get('readiness', 0.0)
-        unexplained_bank = result.get('unexplained_bank', [])
-
-        return {
-            'summary': summary,
-            'readiness': readiness,
-            'unexplained_bank': unexplained_bank,
-            'rows': rows_out
-        }
-    except Exception as e:
-        return {'error': str(e), 'summary': {'closed': 0, 'partial': 0, 'orphan': 0, 'total': 0}, 'readiness': 0.0, 'unexplained_bank': [], 'rows': []}
+# NOTE: Keep the existing endpoints intact; no changes to their behavior
