@@ -3,6 +3,10 @@ import sqlite3
 import tempfile
 from fastapi.testclient import TestClient
 import sys, os
+# Ensure repo root is on PYTHONPATH early for CI environments
+_repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
 def _try_import_app():
     try:
         from app.api import app as api

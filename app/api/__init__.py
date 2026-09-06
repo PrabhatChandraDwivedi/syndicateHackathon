@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import List, Optional, Any
 from . import core as core  # type: ignore
 
+# Expose a top-level app instance for tests and UI mocks
 app = FastAPI()
 
 class RunResponse(BaseModel):
