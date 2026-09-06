@@ -395,11 +395,18 @@ function renderCases(cases, exceptions){
 }
 
 function renderGst(g){
-  figures($('gstFigures'), [
+  const ran = g.ran !== false;
+  figures($('gstFigures'), ran ? [
     {k:'Input tax credit at risk', v:'₹'+money(g.itc_at_risk), tone: (g.itc_at_risk>0?'bad':'ok')},
     {k:'Invoices matched', v:g.matched ?? 0, tone:'ok'},
     {k:'Findings', v:(g.exceptions||[]).length, tone:(g.exceptions||[]).length?'warn':'ok'}
+  ] : [
+    {k:'Input tax credit at risk', v:'—'},
+    {k:'Invoices matched', v:'—'},
+    {k:'Findings', v:'—'}
   ]);
+  if(!ran){ $('gstRows').innerHTML =
+    '<tr><td colspan="5" class="empty">Not checked yet. Ask the agent to check GST.</td></tr>'; return; }
   const label = {missing_in_gstr2b:'Supplier has not filed',
                  value_mismatch:'Value differs',
                  missing_in_purchase_register:'Not in our register'};
@@ -414,12 +421,21 @@ function renderGst(g){
 
 function renderClose(k){
   const s = k.summary||{};
-  figures($('closeFigures'), [
+  const ran = k.ran !== false;
+  figures($('closeFigures'), ran ? [
     {k:'Close readiness', v:pct(k.readiness), tone:(k.readiness>=0.9?'ok':k.readiness>=0.5?'warn':'bad')},
     {k:'Closed', v:s.closed??0, tone:'ok'},
     {k:'Partial', v:s.partial??0, tone:'warn'},
     {k:'Orphan', v:s.orphan??0, tone:(s.orphan?'bad':'')}
+  ] : [
+    {k:'Close readiness', v:'—'}, {k:'Closed', v:'—'},
+    {k:'Partial', v:'—'}, {k:'Orphan', v:'—'}
   ]);
+  if(!ran){
+    $('closeRows').innerHTML =
+      '<tr><td colspan="6" class="empty">Not tied out yet. Ask the agent to tie out the month.</td></tr>';
+    $('unexplained').innerHTML = ''; return;
+  }
   $('closeRows').innerHTML = (k.rows||[]).length ? k.rows.map(r=>{
     const cls = r.status==='closed'?'ok':r.status==='partial'?'warn':'bad';
     return `<tr><td class="mono">${esc(r.order_ref)}</td>
@@ -479,12 +495,20 @@ async function loadAll(){
       get('/close-readiness'), get('/metrics'), get('/cases'), get('/gst/reconcile'),
       get('/close/status'), get('/rules'), get('/outbox'), get('/agent/last')
     ]);
-    figures($('figures'), [
+    // Nothing has run yet: show dashes, not zeros dressed up as findings.
+    const hasRun = (cs.cases || []).length > 0;
+    figures($('figures'), hasRun ? [
       {k:'Close readiness', v:pct(cr.readiness), tone:(cr.readiness>=0.9?'ok':cr.readiness>=0.5?'warn':'bad')},
       {k:'Cases', v:cr.total_cases ?? 0},
       {k:'Resolved', v:cr.auto_resolved ?? 0, tone:'ok'},
       {k:'Needs review', v:cr.needs_review ?? 0, tone:(cr.needs_review?'warn':'ok')},
       {k:'Audit chain', v: mx.audit_ok ? 'Intact' : 'Broken', tone: mx.audit_ok?'ok':'bad'}
+    ] : [
+      {k:'Close readiness', v:'—'},
+      {k:'Cases', v:'—'},
+      {k:'Resolved', v:'—'},
+      {k:'Needs review', v:'—'},
+      {k:'Audit chain', v:'Not yet run'}
     ]);
     $('runmeta').textContent = mx.run_id ? 'Run ' + mx.run_id : '';
     renderCases(cs.cases, cr.exceptions || mx.exceptions);
