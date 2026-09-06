@@ -1,0 +1,15 @@
+[
+  {
+    "rule_id": "rule_c0dd4b75c8",
+    "pattern": "M4",
+    "action": "auto_resolve",
+    "created_from_case": "case_010",
+    "hit_count": 6,
+    "enabled": true,
+    "learned_amount": 0.0,
+    "max_amount": 0.0,
+    "status": "promoted",
+    "applied_count": 7,
+    "revoked_reason": ""
+  }
+]
