@@ -54,8 +54,8 @@ class CheckMonthCloseArgs(BaseModel):
 
 
 class AskHumanArgs(BaseModel):
-    case_id: str = Field(..., description='Case identifier to ask a human about')
     question: str = Field(..., description='Question to present to a human')
+    case_id: str = Field('', description='Case this is about; leave empty for a general question')
 
 
 # new: DraftVendorEmailArgs
@@ -382,10 +382,21 @@ def build_registry(state: dict,
         pass
 
     def ask_human(args: AskHumanArgsLocal) -> Dict[str, Any]:
-        case = find_case(args.case_id)
+        """Record a question for a person.
+
+        A question about a specific case is attached to it. A question that is not
+        about any case -- or names one that does not exist -- is still recorded
+        rather than rejected. Refusing to let the agent speak because its case id
+        is wrong just makes it retry forever, which is worse than a loose question.
+        """
+        case = find_case(args.case_id) if args.case_id else None
+        state.setdefault('questions', []).append(
+            {'case_id': args.case_id or None, 'question': args.question}
+        )
         if case is None:
-            return {'ok': False, 'error': f'case not found: {args.case_id}'}
-        state.setdefault('questions', []).append({'case_id': args.case_id, 'question': args.question})
+            return {'ok': True, 'case_id': None, 'question': args.question,
+                    'status': 'asked',
+                    'note': 'recorded as a general question; it is not attached to a case'}
         case['status'] = 'needs_review'
         case['agent_question'] = args.question
         return {'ok': True, 'case_id': case.get('case_id'), 'question': args.question, 'status': 'needs_review'}
@@ -393,7 +404,10 @@ def build_registry(state: dict,
     registry.register(
         ToolSpec(
             name='ask_human',
-            description='Explicitly ask a human a question about a case. This tool surfaces uncertainty and stores the question for human input.',
+            description=('Ask a person a question. Pass case_id when the question is about a '
+                         'specific case, or an empty string for a general question. Use this '
+                         'sparingly and never more than once for the same thing -- the answer '
+                         'arrives later, not during this run, so asking again will not help.'),
             args_model=AskHumanArgsLocal,
             fn=ask_human,
             dangerous=True

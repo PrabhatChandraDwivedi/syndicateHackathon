@@ -11,13 +11,18 @@ class ProviderConfig:
     context_limit: int = 32768
     token_param: str = 'max_tokens'
     min_output_tokens: int = 0
+    reasoning_effort: Optional[str] = None
 
 PROVIDERS = {
-    'openai': ProviderConfig('openai', 'gpt-5-nano', 'OPENAI_API_KEY', None, 400000, token_param='max_completion_tokens', min_output_tokens=4000),
+    'openai': ProviderConfig('openai', 'gpt-5-nano', 'OPENAI_API_KEY', None, 400000, token_param='max_completion_tokens', min_output_tokens=4000, reasoning_effort='low'),
     'tensormux': ProviderConfig('tensormux', 'glm-4-7-flash', 'TENSORMUX_API_KEY', 'https://api.tensormux.com/v1', 32768, token_param='max_tokens', min_output_tokens=0),
 }
 
-DEFAULT_ORDER = ['tensormux', 'openai']
+# OpenAI first. GLM is faster on a short prompt, but an agent transcript grows past
+# its 32k window within a couple of steps, and it answers with an empty completion
+# rather than an error -- so trying it first bought a wasted round trip on every
+# step. It stays as the fallback, which is what it is good for.
+DEFAULT_ORDER = ['openai', 'tensormux']
 
 class ModelRouter:
     def __init__(self, order=None, client_factory=None):
@@ -50,6 +55,11 @@ class ModelRouter:
                     'messages': [{'role': 'user', 'content': prompt}]
                 }
                 kwargs[cfg.token_param] = budget
+                # Latency on the gpt-5 family is mostly reasoning tokens, and
+                # "pick the next tool" does not need deep deliberation. Low effort
+                # cuts the wait substantially without changing which tool it picks.
+                if cfg.reasoning_effort:
+                    kwargs['reasoning_effort'] = cfg.reasoning_effort
                 resp = client.chat.completions.create(**kwargs)
                 text = None
                 try:

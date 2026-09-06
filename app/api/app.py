@@ -33,10 +33,16 @@ except Exception:
 DATA_DIR = os.environ.get('DATA_DIR', './seed/data')
 
 # Default agent goal
-DEFAULT_GOAL = ("You own the month-end close. Run the reconciliation, check GST against GSTR-2B, "
-                "and check the three-way month close. Review every open case: consult the learned rules "
-                "and the policy, resolve what is safe to resolve, ask the human when you are genuinely unsure, "
-                "and escalate anything that needs a person.")
+# The period and its data are already configured. Saying so matters: without it the
+# agent stops to ask which period to close, and since no cases exist before the
+# reconciliation runs, it can spend its whole budget asking and get nowhere.
+DEFAULT_GOAL = ("You own the month-end close. The period and all its data are already loaded and "
+                "configured -- do not ask which period to close and do not ask for any input before "
+                "starting. Begin working immediately. There are no cases until you run the "
+                "reconciliation, so run it first. Then check GST against GSTR-2B and draft chasers "
+                "for the suppliers at fault, then check the three-way month close. Then review the "
+                "open cases: consult the learned rules and the policy, resolve what is safe to "
+                "resolve, and escalate anything that needs a person.")
 
 # Global state
 STATE: dict = {

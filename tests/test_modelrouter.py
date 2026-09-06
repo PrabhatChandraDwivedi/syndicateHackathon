@@ -47,7 +47,7 @@ class FakeClient:
 
 def test_complete_floor_and_fallback():
     factory = RecordingClientFactory()
-    router = ModelRouter(client_factory=factory)
+    router = ModelRouter(order=['tensormux', 'openai'], client_factory=factory)
     result = router.complete("Hello", max_tokens=100)
 
     assert result['provider'] == 'openai'
@@ -70,7 +70,7 @@ def test_complete_floor_and_fallback():
 
 def test_complete_budget_above_floor_results_in_openai_budget():
     factory = RecordingClientFactory()
-    router = ModelRouter(client_factory=factory)
+    router = ModelRouter(order=['tensormux', 'openai'], client_factory=factory)
     result = router.complete("Hello", max_tokens=9000)
 
     assert result['provider'] == 'openai'
