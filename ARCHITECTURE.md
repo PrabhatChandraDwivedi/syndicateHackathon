@@ -5,11 +5,10 @@
 
 **Status:** Final, build-ready. Supersedes `docs/Track-2-Original-Architecture.md` (kept for reference).
 
-> ### ⏱ Ten hours · ~45 parallel agents via AO
-> The build window is **10 hours**. Capacity is not the constraint — we can run 40–50 coding agents
-> in parallel through Agent Orchestrator. **Collision is the constraint.** Every feature in this
-> document ships; the plan in §17 is engineered so that no two agents ever touch the same file, and
-> all contracts are frozen before fan-out. Read §17 before writing any code.
+> ### Built by ~58 parallel agents under Agent Orchestrator
+> Every feature in this document ships. **§17 is the task division** — each agent gets one clearly
+> bounded unit of work with named deliverables and named dependencies. AO handles orchestration,
+> merging, and CI.
 
 ---
 
@@ -33,13 +32,14 @@ Supabase stack with Supabase Auth, RBAC, Upstash Redis, and Vercel. Both are tri
 | Vector DB / embeddings | Merchant and entity resolution is solved better and more explainably by normalization + RapidFuzz + a learned alias table. |
 | Live GST portal / live bank / live ERP connectors | Adapters sit behind an interface; inputs are CSV/JSON + Dodo test-mode webhooks. |
 | Full GL replacement, tax filing engine, payroll | Out of Track 2's demonstrable scope. |
+| **Replay harness** | The hash-chained append-only audit log already answers "why did the system do this?" Deterministic re-execution is a production feature. |
 
-Everything else from the original spec **ships**. Nothing was cut for time — see §17.
+Everything else from the original spec **ships**. See §17 for how the work divides across agents.
 
 ### Added — the harness layer
 
 The original doc described *what the agent does*. It barely described *what the agent runs on*.
-Sections 4–13 define **twelve harnesses** plus the four sponsor integrations (**AO, Neatlogs,
+Sections 4–13 define **eleven harnesses** plus the four sponsor integrations (**AO, Neatlogs,
 TensorMux, Dodo Payments**). These are where "Technical Execution & Reliability" (25%) and
 "AO Usage & Build Process" (25%) — half the total score — are actually won.
 
@@ -86,13 +86,12 @@ flowchart TB
       IDEM[H3 Idempotency + action state]
       GUARD[H4 Guardrails / validators]
       SCHED[H5 Scheduler]
-      REPLAY[H6 Replay]
-      EVAL[H7 Eval harness]
-      CHAOS[H8 Chaos injection]
-      NOTIF[H9 Notifications]
-      OBS[H10 Neatlogs tracing]
-      LLM[H11 TensorMux model router]
-      AUD[H12 Hash-chained audit + evidence pack]
+      EVAL[H6 Eval harness]
+      CHAOS[H7 Chaos injection]
+      NOTIF[H8 Notifications]
+      OBS[H9 Neatlogs tracing]
+      LLM[H10 TensorMux model router]
+      AUD[H11 Hash-chained audit + evidence pack]
     end
 
     SRC --> ING --> CAN[(Canonical Store · SQLite)]
@@ -117,7 +116,6 @@ flowchart TB
     IDEM -.gates.- AUTO
     EVAL -.scores.- ENG
     CHAOS -.attacks.- ING
-    REPLAY -.reruns.- ENG
 ```
 
 ### Stack decision
@@ -143,9 +141,8 @@ flowchart TB
 
 ## 3. Canonical data model
 
-**This is the single most important artifact in the build.** ~45 agents code against it
-simultaneously, so it is frozen in Wave 0 (§17) and any change after that requires an explicit
-contract-amendment task. Fields marked **new** are harness additions to the original spec.
+**This is the single most important artifact in the build.** Every agent codes against it, so it is
+produced first (§17, Group 0) and treated as fixed thereafter. Fields marked **new** are harness additions to the original spec.
 
 ```python
 FinancialTransaction:
@@ -197,7 +194,7 @@ AuditEvent:                               # append-only, hash-chained
 ActionState:                              # new: at-most-once side effects
   idempotency_key (PK), case_id, action_type, status, result, attempts
 
-RunRecord:                                # new: replay + eval anchor
+RunRecord:                                # new: run history + eval anchor
   run_id, started_at, policy_version, rule_snapshot_id,
   source_file_ids[], neatlogs_trace_id, metrics_json
 ```
@@ -206,8 +203,8 @@ RunRecord:                                # new: replay + eval anchor
 
 ## 4. The harness layer
 
-Twelve harnesses. Each is a module under `app/harness/`, each is owned by exactly one agent in
-Wave 1, each is independently testable, and each produces something a judge can see.
+Eleven harnesses. Each is a module under `app/harness/`, each is owned by exactly one agent (§17),
+each is independently testable, and each produces something a judge can see.
 
 ### H1 — Ingestion harness
 - Adapter per source; the engine never sees a raw CSV column name.
@@ -266,29 +263,24 @@ APScheduler runs the pipeline on an interval (demo: every 60s; production framin
 This is what makes "continuous close" real rather than a slide: the close-readiness number moves
 on its own between demo beats.
 
-### H6 — Replay harness
-`python -m app.replay --run-id <id>` re-executes a historical run from stored raw payloads at the
-recorded `policy_version` and rule snapshot. Answers the auditor's question — *"why did the system
-do this in September?"* — deterministically, months later.
-
-### H7 — Evaluation harness
+### H6 — Evaluation harness
 See §11. Golden dataset + scorecard + regression gate.
 
-### H8 — Chaos / failure-injection harness
+### H7 — Chaos / failure-injection harness
 `--chaos` injects, on demand: a **stale GSTR-2B extract**, a **duplicated bank file**, **malformed
 rows**, a **truncated invoice export**, a **500 from the LLM provider**, and a **mid-run crash**.
 **Purpose:** the requirements explicitly reward "reliability beyond the happy path." This proves it
 in 15 seconds of video instead of claiming it on a slide. Expected behaviour under chaos: zero
 duplicate side effects, zero silent auto-resolutions, cases degrade to `queued`, audit chain intact.
 
-### H9 — Notification harness
+### H8 — Notification harness
 Sinks: console, file, Slack webhook, SMTP — all behind one interface. Vendor emails and controller
 alerts are **drafted always, sent only after approval**. The demo runs console + file so nothing
 leaves the machine, with the Slack sink shown as configured-but-gated.
 
-### H10 — Observability harness → **Neatlogs** (§6)
-### H11 — Model router harness → **TensorMux** (§7)
-### H12 — Audit & evidence-pack harness (§13)
+### H9 — Observability harness → **Neatlogs** (§6)
+### H10 — Model router harness → **TensorMux** (§7)
+### H11 — Audit & evidence-pack harness (§13)
 
 ---
 
@@ -540,7 +532,7 @@ POST /rules/{id}/disable       kill a bad rule
 GET  /audit?case_id=           append-only event stream
 GET  /audit/verify             re-walks the hash chain → { ok, broken_at }
 GET  /cases/{id}/evidence-pack ZIP export
-GET  /runs · GET /runs/{id}    run history, for replay
+GET  /runs · GET /runs/{id}    run history
 GET  /metrics                  KPIs incl. cost/case, auto-resolve %, LLM-free %
 POST /admin/reset              reload seed data (demo takes)
 ```
@@ -548,8 +540,8 @@ POST /admin/reset              reload seed data (demo takes)
 `X-Actor-Id` names the human on audit events. Absent → `finance_user_01`. That is the entire
 identity story, by design.
 
-**This contract is frozen at T+0:30** (§17, Wave 0) so frontend and backend agents never block each
-other. Changes after that require a contract-amendment task, not a unilateral edit.
+**This contract is produced first** (§17, Group 0) so frontend and backend agents build against a
+fixed interface.
 
 ### UI — 5 screens
 1. **Close Readiness** — overall %, per-workflow bars, blockers, "today's high-impact actions"
@@ -590,7 +582,6 @@ We removed the login wall, so trust has to come from the ledger instead. It does
 | 9 | LLM provider outage mid-demo | TensorMux fallback chain; then degrade to `queued`, never crash |
 | 10 | Same file uploaded twice | H1 file fingerprint → no-op |
 | 11 | Guardrail rejects a valid case | Degrades to human review, never to silent auto-resolve — the failure direction is always safe |
-| 12 | **45 agents collide on one file** | **Disjoint file ownership + frozen contracts (§17). The single biggest schedule risk in this build.** |
 
 ---
 
@@ -623,15 +614,15 @@ syndicateHackathon/
 ├── app/
 │   ├── main.py                 # FastAPI; neatlogs.init() first
 │   ├── adapters/               # bank, card, ar, purchase, gstr2b, ops, dodo
-│   ├── models/                 # Pydantic + SQLite schema  ← frozen in Wave 0
+│   ├── models/                 # Pydantic + SQLite schema
 │   ├── engine/                 # normalize, merchant, cash, subsetsum, scoring,
 │   │                           # gst, close, exceptions
 │   ├── policy/                 # policies.yaml loader + evaluator
 │   ├── memory/                 # learned rules
 │   ├── harness/                # ingestion, tools, idempotency, guardrails,
-│   │                           # scheduler, replay, evals, chaos, notify,
+│   │                           # scheduler, evals, chaos, notify,
 │   │                           # tracing, modelrouter, audit
-│   └── api/                    # routes  ← contract frozen in Wave 0
+│   └── api/                    # routes
 ├── ui/                         # Vite + React + Tailwind, 5 screens
 ├── evals/
 │   ├── golden/                 # labelled dataset
@@ -667,194 +658,215 @@ No auth variables. There is nothing to log into.
 
 ---
 
-## 17. Build plan — 10 hours, ~45 parallel agents
+## 17. Task division — ~58 agents
 
-### The governing constraint
+Every feature in this document is built. Work is divided into twelve groups. Each agent below gets
+**one bounded unit of work**, the **exact files it owns**, and its **dependencies**. Groups are
+listed in dependency order — Group 0 produces the interfaces everything else codes against, so it
+goes first; Groups 1–7 are fully independent of each other and can all run at once.
 
-Agent capacity is effectively unlimited; **coordination is not**. Forty agents editing one codebase
-produce merge conflicts faster than they produce features. Two rules make the fan-out work, and
-everything below exists to enforce them:
-
-> **Rule 1 — Disjoint ownership.** Every file has exactly one owning agent. A worker that needs a
-> file it does not own raises a dependency; it never edits across the boundary.
->
-> **Rule 2 — Contracts before code.** The data model (§3) and the API contract (§12) are frozen in
-> Wave 0. Everything after that codes against a fixed interface, so agents never wait on each other.
-
-Amdahl still applies: parallelism collapses build time but not *integration* time. Hence a dedicated
-integration wave and standing integration agents, not a merge free-for-all at hour 8.
-
-### Time budget
-
-```
-10:00  total
--1:30  README + AO-SESSIONS + rehearsal + record + post + Devpost   (HARD REQUIREMENT)
--1:30  integration waves (cannot be parallelised away)
--0:45  eval run + scorecard
-──────
- 6:15  parallel build time — but ~45× wide
-```
-
-**Code freeze at T+8:00.** Whatever runs then is the submission. A half-finished feature at T+9:00
-costs the video, and the video is a required submission field.
+Each task file lives in `.ao/tasks/<AGENT-ID>.md` so the decomposition itself is in git history.
 
 ---
 
-### Wave 0 — Contract lock · T+0:00–0:30 · **1 agent, serial**
+### Group 0 — Foundation
 
-Nothing else may start until this merges. This is the highest-leverage 30 minutes of the build.
+Produces the contracts every other agent builds against.
 
-| ID | Deliverable |
-|---|---|
-| **A00** | Repo scaffold · `.ao/orchestrator-rules.md` + `.ao/worker-rules.md` **committed first** · SQLite DDL for every table in §3 · Pydantic models · `AuditEvent` hash-chain writer · OpenAPI stub for every route in §12 · `.env.example` · pytest + CI skeleton · `app/main.py` with `neatlogs.init()` at the top |
-
-Output: a merged `main` that every subsequent agent branches from. **Then fan out.**
-
----
-
-### Wave 1 — Parallel build · T+0:30–4:00 · **34 agents**
-
-Every agent owns its files exclusively, ships unit tests, and opens one PR.
-
-**Adapters (6)** — depend on: schema only
-| ID | Owns |
-|---|---|
-| A01 | `adapters/bank.py` + column-mapping config |
-| A02 | `adapters/card.py` |
-| A03 | `adapters/ar_invoices.py` |
-| A04 | `adapters/purchase_register.py` |
-| A05 | `adapters/gstr2b.py` |
-| A06 | `adapters/ops_export.py` |
-
-**Harness (10)** — depend on: schema only
-| ID | Owns |
-|---|---|
-| A07 | `harness/ingestion.py` — fingerprinting, freshness, quarantine (H1) |
-| A08 | `harness/tools.py` — typed registry + permission tiers (H2) |
-| A09 | `harness/idempotency.py` — keys + `ActionState` (H3) |
-| A10 | `harness/guardrails.py` — schema/existence/arithmetic/evidence validators (H4) |
-| A11 | `harness/scheduler.py` (H5) |
-| A12 | `harness/replay.py` (H6) |
-| A13 | `harness/chaos.py` — all 6 injections (H8) |
-| A14 | `harness/notify.py` — console/file/Slack/SMTP sinks (H9) |
-| A15 | `harness/audit.py` — append-only writer + chain verify (H12) |
-| A16 | `harness/evidence_pack.py` — ZIP export (H12) |
-
-**Engine — matching (8)** — depend on: schema only
-| ID | Owns |
-|---|---|
-| A17 | `engine/normalize.py` — text/case/punctuation/store-suffix normalization |
-| A18 | `engine/merchant.py` — alias table + RapidFuzz resolution (Workflow 1) |
-| A19 | `engine/entity.py` — customer/vendor identity resolution |
-| A20 | `engine/cash_candidates.py` — bounded candidate generation (Workflow 2) |
-| A21 | `engine/subsetsum.py` — capped combinatorial allocation |
-| A22 | `engine/scoring.py` — feature weights → confidence |
-| A23 | `engine/residual.py` — partial/over/under settlement |
-| A24 | `engine/duplicates.py` — duplicate transaction/invoice detection |
-
-**Engine — GST (3)**
-| ID | Owns |
-|---|---|
-| A25 | `engine/gst_match.py` — GSTIN/invoice/date/amount exact matching |
-| A26 | `engine/gst_mismatch.py` — fuzzy invoice-number, mismatch classification |
-| A27 | `engine/gst_vendor.py` — vendor grouping + correction-email drafting |
-
-**Engine — close (3)** — Workflow 3, fully built
-| ID | Owns |
-|---|---|
-| A28 | `engine/close_ops_erp.py` — ops↔ERP matching, missing-record detection |
-| A29 | `engine/close_bank.py` — ERP↔bank, fee and timing differences |
-| A30 | `engine/close_advanced.py` — intercompany, accrual, FX revaluation cases |
-
-**Policy, memory, taxonomy (4)**
-| ID | Owns |
-|---|---|
-| A31 | `policy/engine.py` + `config/policies.yaml` |
-| A32 | `memory/rules.py` — learned rule store, scope, expiry, disable |
-| A33 | `engine/exceptions.py` — full §9 taxonomy + classifier |
-| A34 | `engine/explain.py` — evidence assembly + alternatives ranking |
-
----
-
-### Wave 2 — Integration & interfaces · T+3:30–5:30 · **11 agents**
-
-Starts 30 min before Wave 1 ends, against merged branches.
-
-| ID | Owns |
-|---|---|
-| **I01** | **Pipeline wiring** — orchestrates ingest → normalize → match → policy → case. The one genuinely central task; give it your strongest agent |
-| **I02** | **Merge shepherd** — reviews and lands Wave 1 PRs, resolves conflicts, enforces contract |
-| A35 | `api/` core routes — ingest, run, metrics, admin/reset |
-| A36 | `api/` case routes — queue, detail, decision, rules |
-| A37 | `api/` audit routes — stream, verify, evidence-pack, runs |
-| A38 | `ui/` screen 1 — Close Readiness dashboard |
-| A39 | `ui/` screen 2 — Exception Queue |
-| A40 | `ui/` screen 3 — Case Detail |
-| A41 | `ui/` screens 4+5 — Rules Learned, Audit Timeline |
-| A42 | `integrations/neatlogs.py` — spans, trace-id propagation into cases and audit |
-| A43 | `integrations/tensormux.py` — router, fallback chain, cost metering |
-
----
-
-### Wave 3 — Data, evals, sponsors, hardening · T+5:30–7:45 · **10 agents**
-
-| ID | Owns |
-|---|---|
-| A44 | `seed/generate.py` — 400-record dataset **with ground truth emitted alongside** |
-| A45 | `evals/run.py` — all 9 metrics |
-| A46 | `evals/report.py` — scorecard renderer |
-| A47 | `integrations/dodo.py` — client + test-mode seeder |
-| A48 | `api/webhooks_dodo.py` — HMAC verify + idempotent handler |
-| A49 | `engine/processor_exceptions.py` — fee, timing, refund, dispute cases |
-| **I03** | **End-to-end test agent** — full run green, chaos suite green, audit chain verified |
-| **I04** | **Demo data curator** — makes §15's exact cases present and visually clean |
-| A50 | `README.md` — setup instructions (required submission field) |
-| A51 | `docs/AO-SESSIONS.md` — session count, task→PR table, dashboard screenshots |
-
-**T+7:00 — human runs the eval**, confirms the 12 rules, runs Run 2, commits the real scorecard.
-**T+7:45 — dry-run the demo once, end to end.**
-
----
-
-### Wave 4 — Freeze and ship · T+8:00–10:00 · **no code**
-
-| Time | Work |
-|---|---|
-| 8:00 | 🔒 **CODE FREEZE** |
-| 8:00–8:30 | Final README pass, AO-SESSIONS screenshots, architecture link |
-| 8:30–9:15 | Record the demo video — budget for 3 takes |
-| 9:15–10:00 | Post publicly to X or LinkedIn; submit post URL + repo + architecture to Devpost |
-
----
-
-### Checkpoints — the plan's circuit breakers
-
-| At | Test | If failing |
+| ID | Owns | Deliverable |
 |---|---|---|
-| **T+0:30** | Is Wave 0 merged and green? | **Do not fan out.** A broken contract multiplied by 34 agents is the one unrecoverable failure in this plan |
-| **T+4:00** | Are ≥28 of 34 Wave 1 PRs merged? | Land what's green, defer the rest to stretch; I01 proceeds with stubs |
-| **T+5:30** | Does one full run produce cases end-to-end? | Freeze feature work. Wave 3 agents redirect to making the existing path solid |
-| **T+7:00** | Is `scorecard.md` real and committed? | Stop everything else. It is a required submission field |
-| **T+7:45** | Has the demo been dry-run once? | Cut straight to freeze; ship what runs |
+| **A00** | `.ao/`, `app/models/`, `app/db/`, `app/main.py`, `.env.example`, CI config | `.ao/orchestrator-rules.md` + `.ao/worker-rules.md`; SQLite DDL for every table in §3; Pydantic models; `AuditEvent` hash-chain writer; OpenAPI stub for every route in §12; `neatlogs.init()` at the top of `main.py`; pytest skeleton |
 
-### If something must go — cut order
+**Depends on:** nothing. **Everything else depends on this.**
 
-Full scope is planned, but under pressure drop in this order:
-Slack/SMTP sinks → replay harness → evidence-pack ZIP → advanced close cases (intercompany/FX/accrual)
-→ Dodo disputes and subscriptions → screens 4–5 folded into Case Detail.
+---
 
-**Never cut, at any checkpoint:** the hash-chained audit log · the guardrail layer (H4) ·
-`scorecard.md` · `.ao/` evidence · the README. Three of those are explicit submission requirements
-and all four are where half the score lives.
+### Group 1 — Source adapters (6 agents)
+
+**Depends on:** A00 models. Each adapter maps one source format to canonical records and ships a
+column-mapping config, so the engine never sees a raw CSV column name.
+
+| ID | Owns | Deliverable |
+|---|---|---|
+| A01 | `app/adapters/bank.py`, `config/adapters/bank.yaml` | Bank statement CSV → `FinancialTransaction` |
+| A02 | `app/adapters/card.py`, `config/adapters/card.yaml` | Corporate card CSV → `FinancialTransaction` |
+| A03 | `app/adapters/ar_invoices.py`, `config/adapters/ar.yaml` | Open AR invoices CSV → `Invoice(sales)` |
+| A04 | `app/adapters/purchase_register.py`, `config/adapters/purchase.yaml` | Purchase register CSV → `Invoice(purchase)` |
+| A05 | `app/adapters/gstr2b.py`, `config/adapters/gstr2b.yaml` | GSTR-2B JSON/CSV → `GSTRecord` |
+| A06 | `app/adapters/ops_export.py`, `config/adapters/ops.yaml` | Ops/sales export → `OpsRecord` |
+
+---
+
+### Group 2 — Harness layer (9 agents)
+
+**Depends on:** A00 models. One agent per harness from §4.
+
+| ID | Owns | Deliverable |
+|---|---|---|
+| A07 | `app/harness/ingestion.py` | **H1** — file fingerprinting, column sniffing, `as_of` freshness stamps, row quarantine with reasons |
+| A08 | `app/harness/tools.py` | **H2** — typed tool registry, Pydantic in/out pairs, `READ` / `PROPOSE` / `ACT` permission tiers |
+| A09 | `app/harness/idempotency.py` | **H3** — `idempotency_key` derivation, `ActionState` table, at-most-once `ACT` execution |
+| A10 | `app/harness/guardrails.py` | **H4** — schema validation, DB existence check, arithmetic verifier, evidence-completeness check, safe downgrade to `queued` |
+| A11 | `app/harness/scheduler.py` | **H5** — APScheduler continuous-close loop + SQLite `outbox` |
+| A12 | `app/harness/chaos.py` | **H7** — all six injections: stale extract, duplicate file, malformed rows, truncated export, LLM 500, mid-run crash |
+| A13 | `app/harness/notify.py` | **H8** — console / file / Slack webhook / SMTP sinks behind one interface, all approval-gated |
+| A14 | `app/harness/audit.py` | **H11** — append-only writer, `prev_hash` / `this_hash` chaining, chain verification |
+| A15 | `app/harness/evidence_pack.py` | **H11** — per-case ZIP: source rows, candidates, scores, policy evaluated, decision, resulting rule, trace link |
+
+---
+
+### Group 3 — Matching engine (8 agents)
+
+**Depends on:** A00 models. The core of Workflows 1 and 2.
+
+| ID | Owns | Deliverable |
+|---|---|---|
+| A16 | `app/engine/normalize.py` | Case, punctuation, store-number, corporate-suffix and location-token normalization |
+| A17 | `app/engine/merchant.py` | **Workflow 1** — alias table lookup, historical confirmed mappings, RapidFuzz resolution, canonical merchant + proposed GL category |
+| A18 | `app/engine/entity.py` | Customer and vendor identity resolution, alias history |
+| A19 | `app/engine/cash_candidates.py` | **Workflow 2, Pass A/B** — deterministic rules, then bounded candidate generation filtered by customer, open status, currency and date window |
+| A20 | `app/engine/subsetsum.py` | Capped combinatorial allocation, maximum bundle size 4 |
+| A21 | `app/engine/scoring.py` | Feature weights → confidence: amount fit, identity, invoice and due dates, reference tokens, past bundle behaviour |
+| A22 | `app/engine/residual.py` | Partial, over- and under-settlement; explicit residual cash and residual invoice balance |
+| A23 | `app/engine/duplicates.py` | Duplicate transaction and duplicate invoice detection |
+
+---
+
+### Group 4 — GST reconciliation (3 agents)
+
+**Depends on:** A00 models. **Workflow 4.**
+
+| ID | Owns | Deliverable |
+|---|---|---|
+| A24 | `app/engine/gst_match.py` | GSTIN, invoice number, date and amount normalization; exact matching |
+| A25 | `app/engine/gst_mismatch.py` | Fuzzy invoice-number handling (`INV-00123` vs `INV/123`) under policy; mismatch classification into the GST taxonomy |
+| A26 | `app/engine/gst_vendor.py` | Exception grouping by vendor; correction-request drafting with exact invoice evidence; tracking unresolved items across filing periods |
+
+---
+
+### Group 5 — Close reconciliation (3 agents)
+
+**Depends on:** A00 models. **Workflow 3, fully built.**
+
+| ID | Owns | Deliverable |
+|---|---|---|
+| A27 | `app/engine/close_ops_erp.py` | Ops ↔ ERP matching, missing-record detection |
+| A28 | `app/engine/close_bank.py` | ERP ↔ bank reconciliation, fee and timing difference explanation |
+| A29 | `app/engine/close_advanced.py` | Intercompany differences, accrual-required cases, FX revaluation pending |
+
+---
+
+### Group 6 — Policy, memory, explanation (4 agents)
+
+**Depends on:** A00 models.
+
+| ID | Owns | Deliverable |
+|---|---|---|
+| A30 | `app/policy/engine.py`, `config/policies.yaml` | Versioned policy evaluation: materiality, freshness, thresholds, never-auto, controller approval, blocks-close |
+| A31 | `app/memory/rules.py` | Learned rule store: type, pattern, scope, source case, confidence, use count, expiry, disable |
+| A32 | `app/engine/exceptions.py` | Full §9 taxonomy plus classifier, across all four workflows |
+| A33 | `app/engine/explain.py` | Evidence assembly and ranked-alternatives generation for every case |
+
+---
+
+### Group 7 — Close readiness (1 agent)
+
+**Depends on:** A00 models.
+
+| ID | Owns | Deliverable |
+|---|---|---|
+| A34 | `app/engine/close_readiness.py` | Per-workflow resolution percentages, blockers, overall readiness score, today's high-impact actions |
+
+---
+
+### Group 8 — Pipeline, API and UI (10 agents)
+
+**Depends on:** A00 contract. The frozen API contract from §12 lets the UI agents build against a
+mock, so they never wait on the backend agents.
+
+| ID | Owns | Deliverable |
+|---|---|---|
+| **A35** | `app/pipeline.py` | **Orchestration** — ingest → normalize → match → policy → case → audit. The central integrating task |
+| A36 | `app/api/core.py` | `POST /ingest/{source}`, `POST /run`, `GET /metrics`, `POST /admin/reset` |
+| A37 | `app/api/cases.py` | `GET /cases`, `GET /cases/{id}`, `POST /cases/{id}/decision` |
+| A38 | `app/api/rules.py` | `GET /rules`, `POST /rules/{id}/disable` |
+| A39 | `app/api/audit.py` | `GET /audit`, `GET /audit/verify`, `GET /cases/{id}/evidence-pack`, `GET /runs` |
+| A40 | `ui/src/screens/CloseReadiness.tsx` | **Screen 1** — overall %, per-workflow bars, blockers, high-impact actions |
+| A41 | `ui/src/screens/ExceptionQueue.tsx` | **Screen 2** — sortable by financial impact; agent's view, confidence and impact per row |
+| A42 | `ui/src/screens/CaseDetail.tsx` | **Screen 3** — evidence, ranked alternatives, arithmetic shown, Approve / Edit split / Reject / Leave unapplied, "View agent reasoning →" |
+| A43 | `ui/src/screens/RulesLearned.tsx` | **Screen 4** — pattern, scope, source case, use count, disable toggle |
+| A44 | `ui/src/screens/AuditTimeline.tsx` | **Screen 5** — every state transition, hash-chain status badge, evidence-pack download |
+
+---
+
+### Group 9 — Sponsor integrations (5 agents)
+
+**Depends on:** A00 models; A08 tool registry for span wrapping.
+
+| ID | Owns | Deliverable |
+|---|---|---|
+| A45 | `app/integrations/neatlogs.py` | **§6** — WORKFLOW span per run, child span per tool call, span per LLM call, guardrail rejections as error events, `neatlogs_trace_id` propagated onto cases, runs and audit events |
+| A46 | `app/integrations/tensormux.py`, `config/models.yaml` | **§7** — OpenAI-compatible client, fast/reasoning routing table, fallback chain, degrade-to-`queued`, per-call token and cost metering onto the case |
+| A47 | `app/integrations/dodo_client.py`, `seed/dodo_seed.py` | **§8** — test-mode products, customers, one-time payments, subscription, refund |
+| A48 | `app/api/webhooks_dodo.py` | HMAC-SHA256 verification on `webhook-id` / `webhook-timestamp` / `webhook-signature`; idempotent handler; events → `FinancialTransaction(source=dodo)` |
+| A49 | `app/engine/processor_exceptions.py` | `PROCESSOR_FEE_DIFFERENCE`, `SETTLEMENT_TIMING`, `REFUND_REVERSAL`, `DISPUTE_HOLD` |
+
+---
+
+### Group 10 — Data and evaluation (4 agents)
+
+**Depends on:** A00 models; A30 policy for the safety metric.
+
+| ID | Owns | Deliverable |
+|---|---|---|
+| A50 | `seed/generate.py` | 400-record golden dataset per the §11 table, **built from known ground truth with labels emitted alongside the data** |
+| A51 | `evals/run.py` | All nine metrics from §11, including unsafe-auto-resolution rate and the Run 1 vs Run 2 learning comparison |
+| A52 | `evals/report.py` | `evals/reports/scorecard.md` renderer |
+| A53 | `evals/verify_labels.py` | Stratified 40-record label audit, so ground truth is checked rather than assumed |
+
+---
+
+### Group 11 — QA and submission artifacts (4 agents)
+
+**Depends on:** merged output of the groups above.
+
+| ID | Owns | Deliverable |
+|---|---|---|
+| A54 | `tests/e2e/` | Full run green, chaos suite green, audit chain verified, zero duplicate side effects on retry |
+| A55 | `seed/demo_dataset.py`, `docs/DEMO-SCRIPT.md` | The exact §15 cases present and visually clean: the INR 30,000 XYZ Retail bundle, the INV-101 GST mismatch, `SBX*COFFEE 0811` |
+| A56 | `README.md` | Problem statement, architecture summary, setup instructions, how to run the evals |
+| A57 | `docs/AO-SESSIONS.md` | Session count, task → PR → commit table, AO dashboard screenshots |
+
+---
+
+### Agent count by group
+
+| Group | Agents |
+|---|---:|
+| 0 · Foundation | 1 |
+| 1 · Source adapters | 6 |
+| 2 · Harness layer | 9 |
+| 3 · Matching engine | 8 |
+| 4 · GST reconciliation | 3 |
+| 5 · Close reconciliation | 3 |
+| 6 · Policy, memory, explanation | 4 |
+| 7 · Close readiness | 1 |
+| 8 · Pipeline, API and UI | 10 |
+| 9 · Sponsor integrations | 5 |
+| 10 · Data and evaluation | 4 |
+| 11 · QA and submission | 4 |
+| **Total** | **58** |
+
+---
 
 ### Standing instructions for every worker agent
 
-1. You own your files. Never edit a file you don't own — raise a dependency instead.
-2. The data model and API contract are frozen. Code against them; do not amend them.
+1. You own the files listed in your row. Raise a dependency rather than editing outside them.
+2. The data model (§3) and the API contract (§12) come from A00. Code against them.
 3. Ship unit tests with your module. A PR without tests does not merge.
 4. Never fabricate an eval number, a metric, or a test result.
 5. No credentials in code, task descriptions, or commit messages.
-6. Small PRs. One module, one PR, one concern.
+6. One module, one PR, one concern.
 
 ---
 
@@ -874,13 +886,13 @@ and all four are where half the score lives.
 
 **Must ship:** canonical store · card normalization · cash matching incl. 1:many · GST reconciliation ·
 Ops↔ERP↔Bank close matching · exception queue · confidence + evidence · approve/edit/reject/defer ·
-rule memory · hash-chained audit · evidence packs · close-readiness dashboard · replay · chaos ·
+rule memory · hash-chained audit · evidence packs · close-readiness dashboard · chaos ·
 Neatlogs · TensorMux · Dodo webhooks · eval scorecard · AO evidence
 
 **Stretch:** real vendor email send · live ERP/bank connectors · richer FX depth ·
 automatic journal generation · remittance PDF extraction · second failure-analysis→fix→re-score cycle
 
-**Do not build:** authentication of any kind · 2FA · RBAC · multi-tenancy · general-ledger
+**Do not build:** authentication of any kind · 2FA · RBAC · multi-tenancy · replay harness · general-ledger
 replacement · tax filing engine · payroll · a generic autonomous-CFO chatbot · UI polish beyond legibility
 
 > **The standing rule:** if a feature cannot appear in the 3-minute video *or* in
