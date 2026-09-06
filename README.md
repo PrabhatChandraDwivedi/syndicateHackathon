@@ -1,16 +1,62 @@
 # ReconcileOS
 
-**Autonomous reconciliation for the office of the CFO.**
+**An agent that runs the month-end close.**
+
+ReconcileOS is an agent, not a reconciliation tool with a model attached. It is given a goal — close
+the books — and it decides what to do: it runs the reconciliation, checks GST against GSTR-2B,
+checks the three-way month close, resolves what is safe to resolve, **asks a human when it is
+genuinely unsure**, and **learns from the answer** so it does not ask again for the same situation.
 
 Finance teams close the books by tying together feeds that never quite agree: a corporate card
 statement, a bank statement, an ERP invoice ledger, an ops export, a processor payout report, and
 GSTR-2B filings. Most of that work is matching rows, chasing the ones that don't match, and being
 able to prove afterwards why each decision was made.
 
-ReconcileOS does the matching deterministically, scores its own confidence, and then **refuses to
-act unattended when it shouldn't** — routing anything ambiguous, material, or risky to a human
-queue. Every outcome is written to a hash-chained audit log, and every case can be exported as a
-self-contained evidence pack.
+The agent perceives and acts **only through a typed tool registry**. It cannot reach the ledger any
+other way, every argument is schema-validated before it runs, and the tools re-check policy
+themselves — so no rationale, however confident, gets it past a control.
+
+---
+
+## The agent
+
+```
+goal → picks a tool → registry validates → executes → observation
+     → decides again → until done or out of steps
+```
+
+| Tool | What it lets the agent do |
+|---|---|
+| `run_reconciliation` | Start the close itself |
+| `reconcile_gst` | Check the purchase register against GSTR-2B |
+| `check_month_close` | Three-way ops ↔ ERP ↔ bank |
+| `list_open_cases` / `get_case` | Look at what came back |
+| `recall_rule` | Consult its own memory |
+| `check_policy` | Check what it is allowed to do |
+| `resolve_case` | Do the job — **refuses anything policy blocks** |
+| `ask_human` | Ask, instead of guessing |
+| `escalate_to_human` | Hand off what needs a person |
+
+A failed or refused tool call does not end the run — it becomes an observation the agent reacts to.
+
+`POST /agent/run` drives it; `GET /agent/last` returns the full step-by-step trace.
+
+---
+
+## How it learns, and how far it is trusted
+
+A human approves a case once; the agent handles that pattern itself next time. That is only safe
+because the trust is bounded:
+
+- **Policy always wins.** A learned rule is ignored entirely for duplicates, amount mismatches and
+  split payments. You cannot teach the agent to auto-resolve those.
+- **Rules are scoped to the risk they were learned on.** Approving a ₹3,200 charge caps the rule at
+  3× that amount. A ₹300,000 charge with the same merchant comes back to a human rather than
+  inheriting a small case's approval.
+- **Provisional before promoted.** A new rule acts, but stays `flagged_for_review` for its first
+  three applications so a human can see what it did while it is earning trust.
+- **One rejection revokes it.** Reject a case the agent resolved via a rule and that rule is
+  disabled immediately — though it stays in the audit trail with the reason.
 
 ---
 

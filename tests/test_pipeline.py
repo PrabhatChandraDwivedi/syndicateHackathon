@@ -3,17 +3,16 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from app.pipeline import run_pipeline
 
-
 def test_run_pipeline_basic(tmp_path):
     data_dir = str(tmp_path / "seed_data")
-    result = run_pipeline(db_path=":memory:", data_dir=data_dir, policy_path=None)
+    result = run_pipeline(db_path=":memory:", data_dir=data_dir, policy_path=None, use_llm=False)
 
     # Basic structure checks
     assert isinstance(result, dict)
     assert result.get('run_id')
     counts = result.get('counts', {})
-    assert counts.get('sources') == 10
-    assert counts.get('targets') == 8
+    assert counts.get('sources') == 11
+    assert counts.get('targets') == 9
     assert isinstance(result.get('cases'), list)
     assert counts.get('cases') == len(result['cases'])
 
@@ -38,3 +37,12 @@ def test_run_pipeline_basic(tmp_path):
         assert 'workflow' in case
         assert 'status' in case
         assert 'confidence' in case
+        assert 'pattern' in case
+        assert 'learned_rule_applied' in case
+
+    # Summary handling
+    summary = result.get('summary')
+    assert isinstance(summary, dict) or summary is None
+    if isinstance(summary, dict):
+        assert isinstance(summary.get('learned_rules_applied'), int)
+        assert isinstance(summary.get('flagged_for_review'), int)
