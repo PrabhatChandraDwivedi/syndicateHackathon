@@ -25,7 +25,7 @@ _CARD_ROWS: List[Dict[str, Any]] = [
     {"id": "C007", "source": "corporate_card", "account_id": "CARD-9012", "date": "2026-08-12", "amount": "400.00", "currency": "INR", "counterparty_raw": "SWIGGY ORDER 100234", "reference_raw": "REF100234"},
     {"id": "C008", "source": "corporate_card", "account_id": "CARD-9012", "date": "2026-08-12", "amount": "850.50", "currency": "INR", "counterparty_raw": "SWIGGY ORDER 100235", "reference_raw": "REF100235"},
     {"id": "C009", "source": "corporate_card", "account_id": "CARD-9012", "date": "2026-08-15", "amount": "2750.00", "currency": "INR", "counterparty_raw": "UNKNOWN VENDOR XYZ 5567", "reference_raw": "REF5567"},
-    {"id": "C010", "source": "corporate_card", "account_id": "CARD-9012", "date": "2026-08-18", "amount": "450.00", "currency": "INR", "counterparty_raw": "POS VISA STARBUCKS INDIA PVT LTD 4412998", "reference_raw": "REF4412998"},
+    {"id": "C010", "source": "corporate_card", "account_id": "CARD-9012", "date": "2026-08-03", "amount": "450.00", "currency": "INR", "counterparty_raw": "POS VISA STARBUCKS INDIA PVT LTD 4412998", "reference_raw": "REF4412998"},
 ]
 
 _BANK_ROWS: List[Dict[str, Any]] = [
