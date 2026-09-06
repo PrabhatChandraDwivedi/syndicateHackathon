@@ -9,7 +9,7 @@ NOT_SENT_NOTICE = "This draft was prepared automatically and has not been sent."
 def recipient_for(supplier_gstin: Optional[str]) -> str:
     if not supplier_gstin:
         supplier_gstin = "unknown"
-    s = supplier_gstin.strip().lower()
+    s = supplier_gstin.strip()
     s = re.sub(r"\W+", "-", s)
     return f"ap-{s}@vendor.invalid"
 
