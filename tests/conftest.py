@@ -2,13 +2,26 @@ import os
 import sqlite3
 import tempfile
 from fastapi.testclient import TestClient
-try:
-    # Prefer importing the FastAPI app exposed by app.api
-    from app.api import app as api
-except Exception:
-    # Fallback: import the __init__ module to avoid import-time failures in CI environments
-    from importlib import import_module
-    api = import_module('app.api').__dict__.get('app')  # type: ignore
+import sys, os
+def _try_import_app():
+    try:
+        from app.api import app as api
+        return api
+    except Exception:
+        pass
+    # Last-resort: adjust sys.path to include repo root and retry
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+    try:
+        from app.api import app as api
+        return api
+    except Exception:
+        return None
+
+api = _try_import_app()
+if api is None:
+    raise ModuleNotFoundError("Could not import app.api.app for tests. Ensure repository root is on PYTHONPATH and app package is importable.")
 
 import pytest
 
