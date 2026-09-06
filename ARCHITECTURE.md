@@ -130,7 +130,7 @@ flowchart TB
 | Matching | pandas, RapidFuzz, bounded subset-sum | Deterministic, explainable, no vector DB. |
 | Jobs | APScheduler + SQLite `outbox` table | Continuous close without infrastructure. |
 | Frontend | **Vite + React + Tailwind**, 5 screens | Fast, no auth, reads the same REST API the agent writes to. |
-| Inference | **OpenAI** primary, **TensorMux** fallback | Both OpenAI-compatible. Routing, fallback + cost metering, see §7. |
+| Inference | **OpenAI `gpt-5-nano`** (fast tier) + **TensorMux `glm-4-7-flash`** (reasoning tier) | Both OpenAI-compatible, each the other's fallback. See §7. |
 | Tracing | **Neatlogs** | See §6. |
 | Processor feed | **Payout report CSV** | See §8. No external dependency, no tunnel, no live call during the demo. |
 | Dev orchestration | **AO** | See §5 and §17. Mandatory. |
@@ -348,44 +348,55 @@ this many agents we can run it more than once.
 
 ---
 
-## 7. Model router — OpenAI primary, TensorMux fallback
+## 7. Model router — two providers, two tiers
 
-Two providers, both OpenAI-compatible, behind one client interface. **OpenAI is primary**;
-**TensorMux is the fallback leg** and the hackathon's inference partner.
+Two OpenAI-compatible providers behind one client interface. The available models are **verified
+against the live endpoints**, not assumed:
 
-| Role | Provider | Model | Notes |
+| Provider | Model | Verified access | Character |
 |---|---|---|---|
-| **Primary** | OpenAI | `gpt-4o-mini` (bulk), `gpt-4.1` (reasoning-heavy) | Stronger instruction-following and reliable structured output, which the guardrail layer (H4) depends on |
-| **Fallback** | TensorMux | `glm-4-7-flash` | 50M free tokens, `https://api.tensormux.com/v1`. Sign in at `app.tensormux.com`; key starts `tmx_` |
-| **Last resort** | — | — | Degrade the case to `queued`. The pipeline never dies on an LLM outage |
+| **OpenAI** | `gpt-5-nano` | ✓ tested | Small, fast, cheap. Reliable structured output |
+| **TensorMux** | `glm-4-7-flash` | ✓ tested | Reasoning model, emits a `reasoning` field. 50M free tokens |
+
+> The OpenAI key is scoped to exactly three models — `gpt-5-nano`, `text-embedding-3-small`,
+> `text-embedding-ada-002`. There is no `gpt-4o` or `gpt-4.1` on it. The router is designed around
+> what actually exists.
+
+### Tiering
+
+This is a genuine two-tier split, and it falls out of the two providers naturally:
+
+| Tier | Model | Used for | Why |
+|---|---|---|---|
+| **Fast** | OpenAI `gpt-5-nano` | Exception classification into the §9 taxonomy, merchant descriptor disambiguation | Closed label sets, high volume, low stakes. Cheap and dependable at structured output, which H4 requires |
+| **Reasoning** | TensorMux `glm-4-7-flash` | Cash-application shortlist selection, vendor-correction drafting, close commentary | Genuinely ambiguous and materially consequential. This model *is* a reasoning model, and its tokens are free |
 
 ```python
-primary  = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-fallback = OpenAI(base_url=os.environ["TENSORMUX_BASE_URL"],
-                  api_key=os.environ["TENSORMUX_API_KEY"])
+fast      = OpenAI(api_key=os.environ["OPENAI_API_KEY"])          # gpt-5-nano
+reasoning = OpenAI(base_url=os.environ["TENSORMUX_BASE_URL"],     # glm-4-7-flash
+                   api_key=os.environ["TENSORMUX_API_KEY"])
 ```
 
-Because both are OpenAI-compatible, swapping the order is a `models.yaml` edit — no call-site change.
+Each provider is the other's fallback, so a single-provider outage degrades quality rather than
+stopping the pipeline.
 
 ### Routing policy (`config/models.yaml`)
 
 | Concern | What the router does |
 |---|---|
-| **Task profiles** | Each call site declares a profile (`classify`, `disambiguate`, `select`, `draft`, `narrate`) with its own model, temperature, max-tokens, timeout and retry budget. Closed-label tasks get `gpt-4o-mini` and tight budgets; the cash-application shortlist gets `gpt-4.1` and a generous one |
-| **Fallback chain** | OpenAI → TensorMux → **degrade the case to `queued`**. This is exactly what the chaos harness (H7) injects with its LLM-500 failure |
+| **Task profiles** | Each call site declares a profile (`classify`, `disambiguate`, `select`, `draft`, `narrate`) with its own provider, temperature, max-tokens, timeout and retry budget |
+| **Fallback chain** | Preferred tier → the other provider → **degrade the case to `queued`**. Exactly what the chaos harness (H7) injects with its LLM-500 failure |
 | **Cost metering** | Per-call tokens and cost land on the case (`token_cost_usd`), aggregated into the KPI **"cost per exception resolved"** |
 
 ### Two implementation notes for A46
 
-1. **`glm-4-7-flash` is a reasoning model that returns its thinking in a separate `reasoning`
-   field.** On a tight `max_tokens` it returns `content: null` with `finish_reason: "length"` and
-   the answer stranded in `reasoning`. The fallback leg must budget generously and **must not treat
-   empty `content` as failure** — check `reasoning` too, and only degrade to `queued` when both are
-   empty. Verified against the live endpoint.
-2. **OpenAI is billed pay-as-you-go.** Deterministic-first is therefore a cost strategy as well as
-   an accuracy one: the dashboard shows `% of cases resolved with zero LLM calls`, and that number
-   rises between Run 1 and Run 2 as learned rules displace model calls. If spend becomes a concern,
-   flip the order in `models.yaml` — TensorMux's 50M tokens are free.
+1. **`glm-4-7-flash` returns its answer in a separate `reasoning` field.** On a tight `max_tokens`
+   it returns `content: null` with `finish_reason: "length"` and the answer stranded in `reasoning`.
+   Budget generously and **never treat empty `content` as failure** — check `reasoning` too, and only
+   degrade to `queued` when both are empty. Verified against the live endpoint.
+2. **Deterministic-first is a cost strategy as well as an accuracy one.** The dashboard shows
+   `% of cases resolved with zero LLM calls`, and that number rises between Run 1 and Run 2 as
+   learned rules displace model calls.
 
 ---
 
@@ -851,7 +862,7 @@ One bounded unit of work, an explicit file list, unit tests, one PR. Never edits
 | ID | Owns | Deliverable |
 |---|---|---|
 | A45 | `app/integrations/neatlogs.py` | **§6** — WORKFLOW span per run, child span per tool call, span per LLM call, guardrail rejections as error events, `neatlogs_trace_id` propagated onto cases, runs and audit events |
-| A46 | `app/integrations/tensormux.py`, `config/models.yaml` | **§7** — OpenAI-compatible client, task-profile routing, **OpenAI → TensorMux → degrade-to-`queued`** fallback chain, per-call token and cost metering onto the case |
+| A46 | `app/integrations/tensormux.py`, `config/models.yaml` | **§7** — OpenAI-compatible client, task-profile routing, **preferred tier → other provider → degrade-to-`queued`** fallback chain, per-call token and cost metering onto the case |
 
 #### SO-10 · Data & Evaluation — 4 workers
 **Owns:** `seed/generate.py`, `evals/`

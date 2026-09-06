@@ -25,11 +25,12 @@ Already present on this machine:
 **Neatlogs**. No tunnel is needed — live Dodo webhooks were dropped (see below), so every source is
 a local file and the whole system runs offline.
 
-> **OpenAI is primary, TensorMux is the fallback leg.** The chain is
-> `OpenAI → TensorMux → degrade case to queued`, which makes the chaos harness's "LLM 500"
-> injection a real test rather than a mocked one. Both keys are verified working against their live
-> endpoints. Flip the order in `config/models.yaml` if OpenAI spend becomes a concern — TensorMux's
-> 50M tokens are free.
+> **Two tiers, one per provider — both verified against the live endpoints.**
+> The OpenAI key is scoped to **`gpt-5-nano` only** (plus two embedding models); there is no
+> `gpt-4o` or `gpt-4.1` on it. So: **fast tier = OpenAI `gpt-5-nano`** for classification and
+> disambiguation, **reasoning tier = TensorMux `glm-4-7-flash`** for the cash-application shortlist
+> and drafting. Each provider is the other's fallback, then the case degrades to `queued` — which
+> is what the chaos harness's "LLM 500" injection tests.
 
 > **Dodo Payments is dropped from the critical path.** It is the hackathon's credits partner, not a
 > scored integration — it appears in none of the eleven rules and no rubric line. It was the only
