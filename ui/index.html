@@ -1,665 +1,809 @@
 <!doctype html>
 <html lang="en">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>ReconcileOS Operator Dashboard</title>
-    <style>
-        :root {
-            --bg-color: #121212;
-            --card-bg: #1e1e1e;
-            --border-color: #333333;
-            --text-primary: #e0e0e0;
-            --text-secondary: #a0a0a0;
-            --accent-color: #3b82f6;
-            --accent-hover: #2563eb;
-            --success-color: #10b981;
-            --success-bg: rgba(16, 185, 129, 0.15);
-            --warning-color: #f59e0b;
-            --warning-bg: rgba(245, 158, 11, 0.15);
-            --error-color: #ef4444;
-            --error-bg: rgba(239, 68, 68, 0.15);
-            --font-stack: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        }
+  <meta charset="utf-8" />
+  <title>ReconcileOS - Agent Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #0b0f15;
+      --panel: #141923;
+      --surface: #1a2030;
+      --text: #e9eefb;
+      --muted: #aab4c2;
+      --border: #2a3240;
+      --amber: #f59e0b;
+      --green: #22c55e;
+      --red: #f87171;
+      --shadow: 0 6px 20px rgba(0,0,0,.25);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.4;
+    }
+    .page {
+      max-width: 1150px;
+      margin: 0 auto;
+      padding: 20px 16px 60px;
+    }
+    header { margin: 6px 0 12px; }
+    .brand {
+      display: flex; align-items: baseline; gap: 12px;
+      font-weight: 800; font-size: 28px;
+    }
+    .brand .subtitle {
+      font-weight: 500; font-size: 14px; color: var(--muted);
+    }
+    .toolbar { display: flex; align-items: center; gap: 12px; margin: 6px 0 18px; }
+    .btn {
+      border: none; padding: 12px 18px; border-radius: 8px;
+      font-weight: 700; cursor: pointer;
+    }
+    .btn-primary { background: #2563eb; color: white; }
+    .btn-secondary { background: #2b3240; color: #e9e9e9; border: 1px solid #3b465e; }
+    .btn[disabled] { opacity: 0.6; cursor: not-allowed; }
+    .spinner {
+      display: inline-block; width: 12px; height: 12px;
+      border: 2px solid #fff; border-top-color: transparent;
+      border-radius: 50%; vertical-align: middle;
+      animation: spin 0.8s linear infinite; margin-left: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+    .error-banner {
+      display: none;
+      background: #300606;
+      color: #ffd6d6;
+      border: 1px solid #ff6b6b;
+      padding: 12px 14px;
+      border-radius: 8px;
+      margin: 6px 0 14px;
+    }
 
-        body {
-            background-color: var(--bg-color);
-            color: var(--text-primary);
-            font-family: var(--font-stack);
-            line-height: 1.5;
-            padding: 20px;
-            min-height: 100vh;
-        }
+    .container { display: grid; grid-template-columns: 1fr; gap: 14px; }
 
-        .container {
-            max-width: 1100px;
-            margin: 0 auto;
-        }
+    .panel {
+      background: #0f1320;
+      border: 1px solid #2a3240;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: var(--shadow);
+    }
+    .panel h2 { margin: 0 0 8px; font-size: 16px; color: #e6eaf6; }
+    .section-title { font-size: 12px; color: #aab4c2; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .4px; }
 
-        /* Header */
-        header {
-            margin-bottom: 24px;
-            padding-bottom: 16px;
-            border-bottom: 1px solid var(--border-color);
-        }
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+    .tile {
+      background: #141a2a; padding: 12px; border-radius: 8px;
+      border: 1px solid #2a3240; min-height: 72px;
+      display: flex; flex-direction: column; justify-content: center;
+    }
+    .tile .label { font-size: 12px; color: #a9b4c2; }
+    .tile .value { font-size: 22px; font-weight: 700; color: #eaf2ff; margin-top: 6px; }
 
-        h1 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--text-primary);
-        }
+    /* Timeline (Agent Activity) */
+    .timeline { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+    .step {
+      display: grid; grid-template-columns: 44px 1fr; gap: 12px;
+      padding: 8px; border: 1px solid #2a3240; border-radius: 8px; background: #0b1020;
+    }
+    .step.refused { border-left: 4px solid var(--amber); background: rgba(245,158,11,.08); }
+    .refused-label { grid-column: 1 / -1; justify-self: start; align-self: center;
+      font-size: 12px; color: #fbd38d; background: rgba(245,158,11,.15);
+      padding: 2px 6px; border-radius: 6px; margin-bottom: 4px;
+      border: 1px solid rgba(245,158,11,.5);
+    }
+    .step-num {
+      font-family: ui-monospace,SFMono-Regular,Monaco,Consolas,"Liberation Mono", monospace;
+      font-weight: 700; font-size: 14px; color: #fff;
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 32px; height: 32px; border-radius: 6px;
+      background: #1f2a44; border: 1px solid #2a3240;
+    }
+    .step-content { display: flex; flex-direction: column; gap: 6px; }
+    .thought { font-size: 14px; color: #e7eaf3; }
+    .tool { font-family: ui-monospace,SFMono-Regular,Monaco,Consolas,"Liberation Mono", monospace;
+            font-size: 12px; color: #e2e7f0; }
+    .pill {
+      font-family: ui-monospace,SFMono-Regular,Monaco,Consolas,"Liberation Mono", monospace;
+      font-size: 12px; padding: 2px 6px; border-radius: 6px;
+      background: #1f2a44; border: 1px solid #2a3240; display: inline-block;
+      margin-left: 6px;
+    }
+    .json { white-space: pre-wrap; background: #0b1120; border: 1px solid #2a3240;
+             padding: 6px; border-radius: 6px; font-family: ui-monospace,SFMono-Regular,Monaco,Consolas,"Liberation Mono", monospace; font-size: 12px; color: #d8e2f6; }
 
-        h1 span {
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-            font-weight: 400;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            display: block;
-            margin-top: 4px;
-        }
+    .error { color: #ff6b6b; font-weight: 600; }
 
-        /* Toolbar */
-        .toolbar {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 24px;
-        }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { padding: 6px 8px; border-bottom: 1px solid #2a3240; font-size: 12px; text-align: left; }
+    th { color: #cbd6e6; }
+    tr:hover td { background: rgba(255,255,255,.02); }
 
-        button {
-            background-color: var(--card-bg);
-            color: var(--text-primary);
-            border: 1px solid var(--border-color);
-            padding: 8px 16px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-family: inherit;
-            font-size: 0.9rem;
-            transition: background-color 0.2s, border-color 0.2s;
-        }
+    .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .badge.green { background: #16a34a; color: white; }
+    .badge.amber { background: #f59e0b; color: #1b120f; }
+    .badge.red { background: #e11d48; color: white; }
 
-        button:hover:not(:disabled) {
-            background-color: #2d2d2d;
-            border-color: #444;
-        }
+    /* Tabs */
+    .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 12px; }
+    .tab { padding: 8px 12px; border-radius: 6px; border: 1px solid #2a3240; background: #0f1220; color: #e5e7eb; cursor: pointer; font-weight: 700; }
+    .tab.active { background: #1a1f2e; border-color: #3b465f; }
+    .tab-panel { display: none; padding-top: 6px; }
+    .tab-panel.active { display: block; }
 
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
+    /* Minor helper note for empty states */
+    .empty { color: var(--muted); font-style: italic; }
 
-        button.primary {
-            background-color: var(--accent-color);
-            border-color: var(--accent-color);
-            color: white;
-        }
-
-        button.primary:hover:not(:disabled) {
-            background-color: var(--accent-hover);
-        }
-
-        /* Stats Grid */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 16px;
-            margin-bottom: 24px;
-        }
-
-        .stat-card {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 16px;
-            text-align: center;
-        }
-
-        .stat-label {
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            margin-bottom: 8px;
-        }
-
-        .stat-value {
-            font-size: 1.25rem;
-            font-weight: 600;
-        }
-
-        .audit-chain-status {
-            font-size: 1rem;
-            font-weight: 600;
-        }
-
-        .audit-chain-status.verified {
-            color: var(--success-color);
-        }
-
-        .audit-chain-status.broken {
-            color: var(--error-color);
-        }
-
-        /* Exceptions Section */
-        .section-header {
-            font-size: 1.1rem;
-            font-weight: 600;
-            margin-bottom: 12px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .exceptions-container {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 16px;
-            margin-bottom: 24px;
-        }
-
-        .exception-bar-wrapper {
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            font-size: 0.9rem;
-        }
-
-        .exception-label {
-            width: 140px;
-            flex-shrink: 0;
-            color: var(--text-secondary);
-        }
-
-        .exception-bar-container {
-            flex-grow: 1;
-            background-color: #2d2d2d;
-            height: 8px;
-            border-radius: 4px;
-            margin: 0 12px;
-            overflow: hidden;
-            position: relative;
-        }
-
-        .exception-bar-fill {
-            height: 100%;
-            background-color: var(--warning-color);
-            border-radius: 4px;
-            transition: width 0.3s ease;
-        }
-
-        .exception-count {
-            width: 40px;
-            text-align: right;
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-
-        /* Queue Table */
-        .table-container {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            overflow-x: auto;
-            max-height: 500px;
-            display: block; /* fallback */
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.95rem;
-        }
-
-        th {
-            background-color: #252525;
-            color: var(--text-secondary);
-            font-weight: 600;
-            text-align: left;
-            padding: 12px 16px;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            box-shadow: 0 1px 0 var(--border-color);
-        }
-
-        td {
-            padding: 12px 16px;
-            border-bottom: 1px solid var(--border-color);
-            color: var(--text-primary);
-        }
-
-        tr:last-child td {
-            border-bottom: none;
-        }
-
-        tr:hover {
-            background-color: #252525;
-            cursor: pointer;
-        }
-
-        /* Detail Panel */
-        .detail-panel {
-            margin-top: 24px;
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 20px;
-            display: none; /* Hidden by default */
-        }
-
-        .detail-panel.visible {
-            display: block;
-            animation: fadeIn 0.2s ease-in-out;
-        }
-
-        .detail-title {
-            font-size: 1rem;
-            font-weight: 600;
-            margin-bottom: 12px;
-            color: var(--accent-color);
-        }
-
-        .detail-content {
-            font-family: "SF Mono", "Menlo", "Monaco", "Consolas", monospace;
-            font-size: 0.85rem;
-            white-space: pre-wrap;
-            color: var(--text-secondary);
-            background: rgba(0,0,0,0.2);
-            padding: 12px;
-            border-radius: 4px;
-        }
-
-        /* Status Pills */
-        .pill {
-            display: inline-block;
-            padding: 4px 8px;
-            border-radius: 999px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-
-        .pill.auto_resolved {
-            background-color: var(--success-bg);
-            color: var(--success-color);
-        }
-
-        .pill.needs_review {
-            background-color: var(--warning-bg);
-            color: var(--warning-color);
-        }
-
-        /* Error Banner */
-        .error-banner {
-            background-color: var(--error-bg);
-            border: 1px solid var(--error-color);
-            color: var(--error-color);
-            padding: 12px 16px;
-            border-radius: 6px;
-            margin-bottom: 20px;
-            display: none;
-            font-weight: 500;
-        }
-
-        .error-banner.visible {
-            display: block;
-            animation: slideDown 0.2s ease-out;
-        }
-
-        /* Loading Overlay */
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(18, 18, 18, 0.8);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-            backdrop-filter: blur(2px);
-        }
-
-        .loading-overlay.hidden {
-            display: none;
-        }
-
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid var(--border-color);
-            border-top: 4px solid var(--accent-color);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes slideDown { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-
-        /* Empty State */
-        .empty-state {
-            padding: 40px;
-            text-align: center;
-            color: var(--text-secondary);
-            font-style: italic;
-        }
-
-    </style>
+    /* Responsive tweaks */
+    @media (max-width: 900px) {
+      .page { padding: 12px; }
+      .timeline { gap: 8px; }
+      .step { grid-template-columns: 40px 1fr; }
+    }
+  </style>
 </head>
 <body>
+  <div id="errorbar" class="error-banner" role="alert" aria-live="polite" style="display:none;"></div>
 
-    <div class="container">
-        <!-- Header -->
-        <header>
-            <h1>ReconcileOS <span>Autonomous reconciliation for the office of the CFO</span></h1>
-        </header>
+  <div class="page">
+    <header aria-label="Header">
+      <div class="brand">
+        ReconcileOS
+        <span class="subtitle">An agent that runs the month-end close</span>
+      </div>
+    </header>
 
-        <!-- Error Banner -->
-        <div id="error-banner" class="error-banner">
-            <strong>Error:</strong> <span id="error-message">An error occurred while fetching data.</span>
-        </div>
-
-        <!-- Toolbar -->
-        <div class="toolbar">
-            <button id="btn-run" class="primary">Run reconciliation</button>
-            <button id="btn-refresh">Refresh</button>
-        </div>
-
-        <!-- Stats -->
-        <section class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-label">Close readiness</div>
-                <div class="stat-value" id="stat-readiness">--%</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Total cases</div>
-                <div class="stat-value" id="stat-total">--</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Auto-resolved</div>
-                <div class="stat-value" id="stat-auto">--</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Needs review</div>
-                <div class="stat-value" id="stat-needs">--</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Audit chain</div>
-                <div class="audit-chain-status" id="stat-audit">--</div>
-            </div>
-        </section>
-
-        <!-- Exceptions -->
-        <section>
-            <div class="section-header">Exceptions</div>
-            <div class="exceptions-container" id="exceptions-container">
-                <div class="empty-state">No exceptions recorded yet.</div>
-            </div>
-        </section>
-
-        <!-- Exception Queue -->
-        <section>
-            <div class="section-header">Exception Queue</div>
-            <div class="table-container">
-                <table id="cases-table">
-                    <thead>
-                        <tr>
-                            <th>Case</th>
-                            <th>Status</th>
-                            <th>Confidence</th>
-                            <th>Method</th>
-                            <th>Exception</th>
-                            <th>Amount Delta</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="cases-tbody">
-                        <tr><td colspan="7" class="empty-state">Loading...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
-
-        <!-- Details Panel -->
-        <div id="detail-panel" class="detail-panel">
-            <div class="detail-title">Case Details (Reasons)</div>
-            <div id="detail-content" class="detail-content"></div>
-        </div>
+    <div class="toolbar" aria-label="Agent controls">
+      <button id="runBtn" class="btn btn-primary" title="Run the agent">Run the agent</button>
+      <button id="refreshBtn" class="btn btn-secondary" title="Refresh data">Refresh</button>
     </div>
 
-    <!-- Loading Overlay -->
-    <div id="loading-overlay" class="loading-overlay hidden">
-        <div class="spinner"></div>
-    </div>
+    <section class="panel" id="agent-activity" aria-label="Agent activity">
+      <h2>AGENT ACTIVITY</h2>
+      <div id="activity-summary" class="text-muted" style="margin-bottom:6px;"></div>
+      <div class="timeline" id="timeline" aria-label="Agent steps">
+        <!-- Steps rendered here -->
+      </div>
+      <div id="activity-empty" class="empty" style="display:none; margin-top:6px;">No runs yet. Click "Run the agent" to start.</div>
+    </section>
 
-    <script>
-        const State = {
-            isLoading: false
-        };
+    <section class="panel" id="agent-questions" aria-label="Agent questions">
+      <h2>AGENT QUESTIONS</h2>
+      <div id="questions" class="grid" style="display:flex; flex-direction:column; gap:10px;">
+        <!-- Questions will render here as cards -->
+      </div>
+      <div id="questions-empty" class="empty" style="display:none; margin-top:6px;">No questions at this time.</div>
+    </section>
 
-        const UI = {
-            errorBanner: document.getElementById('error-banner'),
-            errorMessage: document.getElementById('error-message'),
-            loadingOverlay: document.getElementById('loading-overlay'),
-            btnRun: document.getElementById('btn-run'),
-            btnRefresh: document.getElementById('btn-refresh'),
-            statReadiness: document.getElementById('stat-readiness'),
-            statTotal: document.getElementById('stat-total'),
-            statAuto: document.getElementById('stat-auto'),
-            statNeeds: document.getElementById('stat-needs'),
-            statAudit: document.getElementById('stat-audit'),
-            exceptionsContainer: document.getElementById('exceptions-container'),
-            tableBody: document.getElementById('cases-tbody'),
-            detailPanel: document.getElementById('detail-panel'),
-            detailContent: document.getElementById('detail-content')
-        };
+    <section class="panel" id="stats-section" aria-label="Stats">
+      <h2>STAT TILES</h2>
+      <div class="cards" id="stats-grid">
+        <div class="tile" aria-label="Close readiness">
+          <span class="label">Close readiness</span>
+          <span class="value" id="tile-readiness">0.0%</span>
+        </div>
+        <div class="tile" aria-label="Total cases">
+          <span class="label">Total cases</span>
+          <span class="value" id="tile-total-cases">0</span>
+        </div>
+        <div class="tile" aria-label="Auto-resolved">
+          <span class="label">Auto-resolved</span>
+          <span class="value" id="tile-auto-resolved">0</span>
+        </div>
+        <div class="tile" aria-label="Needs review">
+          <span class="label">Needs review</span>
+          <span class="value" id="tile-needs-review">0</span>
+        </div>
+        <div class="tile" aria-label="Audit status">
+          <span class="label">Audit status</span>
+          <span class="value" id="tile-audit-status">UNKNOWN</span>
+        </div>
+      </div>
+    </section>
 
-        function setError(message) {
-            UI.errorMessage.textContent = message;
-            UI.errorBanner.classList.add('visible');
+    <section class="panel" id="tabs-section" aria-label="Data sections">
+      <div class="tabs" role="tablist" aria-label="Data sections tabs">
+        <button class="tab active" data-target="cases-panel" aria-selected="true" role="tab" id="tab-cases">CASES</button>
+        <button class="tab" data-target="gst-panel" aria-selected="false" role="tab" id="tab-gst">GST</button>
+        <button class="tab" data-target="month-panel" aria-selected="false" role="tab" id="tab-month">MONTH CLOSE</button>
+      </div>
+
+      <div id="cases-panel" class="tab-panel active" role="tabpanel" aria-labelledby="tab-cases">
+        <div class="scroll" style="max-height: 420px;">
+          <table class="table" id="cases-table" style="width:100%;">
+            <thead>
+              <tr>
+                <th>Case</th>
+                <th>Status</th>
+                <th>Confidence</th>
+                <th>Method</th>
+                <th>Exception</th>
+                <th>Amount delta</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="cases-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="gst-panel" class="tab-panel" role="tabpanel" aria-labelledby="tab-gst">
+        <div class="scroll" style="max-height: 420px;">
+          <div class="tile" style="margin-bottom:12px;">
+            <span class="label" style="font-weight:600;">Input tax credit at risk</span>
+            <span class="value" id="gst-credit" style="font-size:28px; margin-left: 8px;">$0.00</span>
+          </div>
+          <table class="table" id="gst-table" style="width:100%;">
+            <thead>
+              <tr><th>Invoice</th><th>Supplier GSTIN</th><th>Type</th><th>Taxable delta</th></tr>
+            </thead>
+            <tbody id="gst-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="month-panel" class="tab-panel" role="tabpanel" aria-labelledby="tab-month">
+        <div class="scroll" style="max-height: 420px;">
+          <div class="tile" style="margin-bottom:12px;">
+            <span class="label" style="font-weight:600;">Summary</span>
+            <span class="value" id="month-summary" style="font-size:28px; margin-left: 8px;">0 / 0 / 0</span>
+          </div>
+          <div class="tile" style="margin-bottom:12px;">
+            <span class="label" style="font-weight:600;">Readiness</span>
+            <span class="value" id="month-readiness" style="font-size:28px; margin-left: 8px;">0%</span>
+          </div>
+          <table class="table" id="month-table" style="width:100%;">
+            <thead>
+              <tr><th>Order Ref</th><th>Ops ID</th><th>ERP ID</th><th>Bank ID</th><th>Status</th><th>Ops net</th><th>ERP amount</th><th>Bank amount</th><th>Variance</th></tr>
+            </thead>
+            <tbody id="month-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="learned-section" aria-label="Learned rules">
+      <h2>LEARNED RULES</h2>
+      <div class="scroll" style="max-height: 320px;">
+        <table class="table" id="rules-table" style="width:100%;">
+          <thead>
+            <tr><th>Pattern</th><th>Action</th><th>Hit count</th><th>Enabled</th></tr>
+          </thead>
+          <tbody id="rules-tbody"></tbody>
+        </table>
+      </div>
+      <div id="rules-empty" class="empty" style="margin-top:6px; display:none;">No learned rules yet.</div>
+    </section>
+  </div>
+
+  <script>
+    // Utility helpers
+    function escapeHtml(s) {
+      if (s == null) return '';
+      return String(s).replace(/[&<>"']/g, function (m) {
+        return ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        })[m];
+      });
+    }
+
+    function formatCurrency(n) {
+      const v = Number(n) || 0;
+      // Use locale for thousands separators
+      return '$' + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function safeJson(obj) {
+      try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
+    }
+
+    // Error banner management
+    const errorBar = document.getElementById('errorbar');
+    function showError(msg) {
+      if (!msg) return;
+      errorBar.textContent = String(msg);
+      errorBar.style.display = 'block';
+    }
+    function clearError() {
+      errorBar.style.display = 'none';
+      errorBar.textContent = '';
+    }
+
+    // Data renderers
+    function renderActivity(data) {
+      const summaryEl = document.getElementById('activity-empty');
+      const timelineEl = document.getElementById('timeline');
+      const summaryBox = document.getElementById('activity-summary');
+      timelineEl.innerHTML = '';
+
+      if (!data || !Array.isArray(data.steps) || data.steps.length === 0) {
+        document.getElementById('activity-empty').style.display = 'block';
+        summaryBox.textContent = '';
+        return;
+      }
+      document.getElementById('activity-empty').style.display = 'none';
+      summaryBox.innerHTML = (data.summary ? escapeHtml(data.summary) : '') +
+        (data.stopped_reason ? `<div class="text-muted" style="margin-top:6px;">Stopped: ${escapeHtml(data.stopped_reason)}</div>` : '');
+      // Build steps
+      data.steps.forEach((step, idx) => {
+        const isRefused = (step.observation && step.observation.refused === true) ||
+                          (step.error && String(step.error).toLowerCase().includes('policy blocks'));
+
+        // Step container
+        const stepDiv = document.createElement('div');
+        stepDiv.className = 'step' + (isRefused ? ' refused' : '');
+
+        // Refused label across both columns
+        if (isRefused) {
+          const label = document.createElement('div');
+          label.className = 'refused-label';
+          label.style.gridColumn = '1 / -1';
+          label.textContent = 'REFUSED BY POLICY';
+          stepDiv.appendChild(label);
         }
 
-        function clearError() {
-            UI.errorBanner.classList.remove('visible');
+        // Step number
+        const numDiv = document.createElement('div');
+        numDiv.className = 'step-num';
+        numDiv.textContent = (step.n != null ? step.n : idx + 1);
+        stepDiv.appendChild(numDiv);
+
+        // Content
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'step-content';
+        const thoughtDiv = document.createElement('div');
+        thoughtDiv.className = 'thought';
+        thoughtDiv.innerHTML = `<strong>Thought:</strong> ${escapeHtml(step.thought || '')}`;
+        const toolDiv = document.createElement('div');
+        toolDiv.className = 'tool';
+        const toolName = escapeHtml(step.tool || '');
+        toolDiv.innerHTML = `Tool:<span class="pill">${toolName}</span>`;
+
+        contentDiv.appendChild(thoughtDiv);
+        contentDiv.appendChild(toolDiv);
+
+        if (step.observation != null) {
+          const obsPre = document.createElement('pre');
+          obsPre.className = 'json';
+          obsPre.style.margin = '6px 0 0';
+          obsPre.textContent = safeJson(step.observation);
+          contentDiv.appendChild(document.createElement('div')).appendChild(obsPre);
+        } else if (step.error) {
+          const errDiv = document.createElement('div');
+          errDiv.className = 'error';
+          errDiv.style.marginTop = '6px';
+          errDiv.textContent = 'Error: ' + String(step.error);
+          contentDiv.appendChild(errDiv);
         }
 
-        function setLoading(isLoading) {
-            State.isLoading = isLoading;
-            UI.loadingOverlay.classList.toggle('hidden', !isLoading);
-            UI.btnRun.disabled = isLoading;
-            UI.btnRefresh.disabled = isLoading;
-        }
+        stepDiv.appendChild(contentDiv);
+        timelineEl.appendChild(stepDiv);
+      });
+    }
 
-        async function fetchJSON(url, options = {}) {
-            try {
-                const response = await fetch(url, options);
-                if (!response.ok) {
-                    throw new Error(`Server responded with status ${response.status}`);
-                }
-                return await response.json();
-            } catch (err) {
-                console.error(`Fetch error for ${url}:`, err);
-                setError(`Failed to fetch data: ${err.message}`);
-                return null;
-            }
-        }
-
-        async function fetchData() {
-            clearError();
-            
-            // 1. Close Readiness (Stats + Exceptions)
-            const readyData = await fetchJSON('/close-readiness');
-            if (!readyData) return;
-
-            // 2. Metrics (Audit status mostly)
-            const metricsData = await fetchJSON('/metrics');
-            if (!metricsData) return;
-
-            // 3. Cases
-            const casesData = await fetchJSON('/cases');
-            if (!casesData) return;
-
-            renderStats(readyData, metricsData);
-            renderExceptions(readyData.exceptions);
-            renderTable(casesData.cases || []);
-        }
-
-        function renderStats(ready, metrics) {
-            // Close readiness
-            UI.statReadiness.textContent = `${ready.readiness}%`;
-            
-            // Audit Chain
-            UI.statAudit.className = 'audit-chain-status';
-            if (metrics.audit_ok) {
-                UI.statAudit.textContent = 'VERIFIED';
-                UI.statAudit.classList.add('verified');
+    function renderQuestions(data) {
+      const qContainer = document.getElementById('questions');
+      const empty = document.getElementById('questions-empty');
+      qContainer.innerHTML = '';
+      if (!data || !Array.isArray(data) || data.length === 0) {
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+      data.forEach(q => {
+        const card = document.createElement('div');
+        card.style.border = '1px solid #2a3240';
+        card.style.borderRadius = '8px';
+        card.style.padding = '10px';
+        card.style.background = '#11172b';
+        const id = escapeHtml(q.case_id || '');
+        const text = escapeHtml(q.question || '');
+        card.innerHTML = `<div style="font-weight:700; font-family: ui-monospace, SFMono-Regular, monospace;">Case ${id}</div>
+                          <div style="margin-top:6px;">${text}</div>`;
+        const btn = document.createElement('button');
+        btn.textContent = 'Approve';
+        btn.className = 'btn btn-secondary';
+        btn.style.marginTop = '8px';
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          try {
+            const resp = await fetch('/cases/' + encodeURIComponent(q.case_id) + '/decision', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'approve' })
+            });
+            if (resp.ok) {
+              const data = await resp.json();
+              if (data && data.learned_rule_id) {
+                const note = document.createElement('div');
+                note.style.color = '#9ae6b4';
+                note.style.fontSize = '12px';
+                note.style.marginTop = '6px';
+                note.textContent = 'Learned: the agent will handle this pattern automatically next time.';
+                card.appendChild(note);
+              }
+              // Refresh questions
+              await loadQuestions();
             } else {
-                UI.statAudit.textContent = 'BROKEN';
-                UI.statAudit.classList.add('broken');
+              throw new Error('Decision failed');
             }
-
-            // Count stats (ensure they exist)
-            UI.statTotal.textContent = ready.total_cases || 0;
-            UI.statAuto.textContent = ready.auto_resolved || 0;
-            UI.statNeeds.textContent = ready.needs_review || 0;
-        }
-
-        function renderExceptions(exceptionsObj) {
-            UI.exceptionsContainer.innerHTML = '';
-            
-            if (!exceptionsObj || Object.keys(exceptionsObj).length === 0) {
-                UI.exceptionsContainer.innerHTML = '<div class="empty-state">No exceptions recorded.</div>';
-                return;
-            }
-
-            // Find max count for scaling
-            const counts = Object.values(exceptionsObj);
-            const maxCount = counts.length > 0 ? Math.max(...counts) : 1;
-
-            for (const [type, count] of Object.entries(exceptionsObj)) {
-                const percentage = (count / maxCount) * 100;
-                
-                const wrapper = document.createElement('div');
-                wrapper.className = 'exception-bar-wrapper';
-                
-                wrapper.innerHTML = `
-                    <div class="exception-label">${type}</div>
-                    <div class="exception-bar-container">
-                        <div class="exception-bar-fill" style="width: ${percentage}%"></div>
-                    </div>
-                    <div class="exception-count">${count}</div>
-                `;
-                
-                UI.exceptionsContainer.appendChild(wrapper);
-            }
-        }
-
-        function renderTable(cases) {
-            UI.tableBody.innerHTML = '';
-
-            if (!cases || cases.length === 0) {
-                UI.tableBody.innerHTML = '<tr><td colspan="7" class="empty-state">No cases found.</td></tr>';
-                return;
-            }
-
-            cases.forEach(c => {
-                const tr = document.createElement('tr');
-                
-                // Determine pill class
-                let pillClass = '';
-                if (c.status === 'auto_resolved') pillClass = 'auto_resolved';
-                else if (c.status === 'needs_review') pillClass = 'needs_review';
-
-                // Format confidence
-                const confidenceDisplay = typeof c.confidence === 'number' ? `${c.confidence}%` : c.confidence || '-';
-
-                tr.innerHTML = `
-                    <td><strong>${c.case_id}</strong></td>
-                    <td><span class="pill ${pillClass}">${c.status}</span></td>
-                    <td>${confidenceDisplay}</td>
-                    <td>${c.method}</td>
-                    <td>${c.exception_type}</td>
-                    <td>${c.amount_delta !== undefined ? c.amount_delta : '-'}</td>
-                    <td><button class="approve-btn" data-id="${c.case_id}">Approve</button></td>
-                `;
-
-                // Row click for details
-                tr.addEventListener('click', (e) => {
-                    if (e.target.classList.contains('approve-btn')) return; // Don't trigger row click on button
-                    fetchCaseDetails(c.case_id);
-                });
-
-                UI.tableBody.appendChild(tr);
-            });
-
-            // Attach approve event listeners
-            document.querySelectorAll('.approve-btn').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    e.stopPropagation(); // Prevent row click
-                    const caseId = btn.dataset.id;
-                    await approveCase(caseId);
-                });
-            });
-        }
-
-        async function fetchCaseDetails(id) {
-            clearError();
-            const caseData = await fetchJSON(`/cases/${id}`);
-            if (caseData) {
-                renderDetails(caseData.reasons);
-            }
-        }
-
-        function renderDetails(reasonsString) {
-            try {
-                // Parse JSON if it's a string, otherwise use raw
-                const reasons = typeof reasonsString === 'string' ? JSON.parse(reasonsString) : reasonsString;
-                UI.detailContent.textContent = JSON.stringify(reasons, null, 2);
-            } catch (e) {
-                UI.detailContent.textContent = reasonsString || 'No reasons available.';
-            }
-            UI.detailPanel.classList.add('visible');
-        }
-
-        async function approveCase(id) {
-            clearError();
-            const success = await fetchJSON(`/cases/${id}/decision`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'approve' })
-            });
-            
-            if (success) {
-                // Refresh on success
-                await fetchData();
-            }
-        }
-
-        // Event Listeners
-        UI.btnRun.addEventListener('click', async () => {
-            clearError();
-            // Run reconciliation
-            await fetchJSON('/run', { method: 'POST' });
-            // Refresh everything
-            await fetchData();
+          } catch (err) {
+            showError('Failed to approve question: ' + err.message);
+          } finally {
+            btn.disabled = false;
+          }
         });
+        card.appendChild(btn);
+        qContainer.appendChild(card);
+      });
+    }
 
-        UI.btnRefresh.addEventListener('click', async () => {
-            clearError();
-            await fetchData();
+    function renderReadiness(data) {
+      // Not used directly here; integrated in metrics
+    }
+
+    function renderMetrics(data) {
+      const readinessTile = document.getElementById('tile-readiness');
+      const totalTile = document.getElementById('tile-total-cases');
+      const autoTile = document.getElementById('tile-auto-resolved');
+      const needsTile = document.getElementById('tile-needs-review');
+      const auditTile = document.getElementById('tile-audit-status');
+
+      if (data && typeof data === 'object') {
+        const readiness = data.readiness != null ? Number(data.readiness) : null;
+        if (readiness != null) readinessTile.textContent = Number(readiness).toFixed(1) + '%';
+        else readinessTile.textContent = '0.0%';
+
+        if (data.counts && data.counts.total != null) totalTile.textContent = data.counts.total;
+        else totalTile.textContent = data.total != null ? data.total : (data.counts?.length ?? 0);
+
+        autoTile.textContent = data.auto_resolved != null ? data.auto_resolved : (data.counts?.auto_resolved ?? 0);
+        needsTile.textContent = data.needs_review != null ? data.needs_review : (data.counts?.needs_review ?? 0);
+
+        auditTile.textContent = data.audit_ok === true ? 'VERIFIED' : 'BROKEN';
+        auditTile.style.color = data.audit_ok === true ? '#22c55e' : '#f87171';
+      } else {
+        readinessTile.textContent = '0.0%';
+        totalTile.textContent = '0';
+        autoTile.textContent = '0';
+        needsTile.textContent = '0';
+        auditTile.textContent = 'UNKNOWN';
+      }
+    }
+
+    function renderGST(data) {
+      // Credit figure
+      const creditEl = document.getElementById('gst-credit');
+      if (data && (data.itc_at_risk != null)) {
+        creditEl.textContent = formatCurrency(data.itc_at_risk);
+      } else if (data && data.itc_at_risk == null && data.matched != null) {
+        creditEl.textContent = formatCurrency(0);
+      } else {
+        creditEl.textContent = formatCurrency(0);
+      }
+
+      const tbody = document.getElementById('gst-tbody');
+      tbody.innerHTML = '';
+      if (data && Array.isArray(data.exceptions) && data.exceptions.length > 0) {
+        data.exceptions.forEach(ex => {
+          const tr = document.createElement('tr');
+          const invoice = document.createElement('td'); invoice.textContent = ex.invoice_number || '';
+          const gstin = document.createElement('td'); gstin.textContent = ex.supplier_gstin || '';
+          const type = document.createElement('td'); type.textContent = ex.exception_type || '';
+          const delta = document.createElement('td'); delta.textContent = formatCurrency(ex.taxable_delta ?? 0);
+          tr.appendChild(invoice);
+          tr.appendChild(gstin);
+          tr.appendChild(type);
+          tr.appendChild(delta);
+          tbody.appendChild(tr);
         });
+      } else {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td colspan="4" class="empty">No GST exceptions.</td>';
+        tbody.appendChild(tr);
+      }
+    }
 
-        // Initialize
-        document.addEventListener('DOMContentLoaded', async () => {
-            await fetchData();
+    function renderMonthClose(data) {
+      // Summary and readiness
+      const summaryEl = document.getElementById('month-summary');
+      const readinessEl = document.getElementById('month-readiness');
+      const tbody = document.getElementById('month-tbody');
+      if (data && data.summary) {
+        const s = data.summary;
+        summaryEl.textContent = `Closed ${s.closed} / Partial ${s.partial} / Orphan ${s.orphan} / Total ${s.total}`;
+      } else {
+        summaryEl.textContent = '0 / 0 / 0 / 0';
+      }
+
+      readinessEl.textContent = (data && data.readiness != null) ? Number(data.readiness).toFixed(1) + '%' : '0%';
+
+      // Rows
+      tbody.innerHTML = '';
+      if (data && Array.isArray(data.rows) && data.rows.length > 0) {
+        data.rows.forEach(r => {
+          const tr = document.createElement('tr');
+          const a = document.createElement('td'); a.textContent = r.order_ref || '';
+          const b = document.createElement('td'); b.textContent = r.ops_id || '';
+          const c = document.createElement('td'); c.textContent = r.erp_id || '';
+          const d = document.createElement('td'); d.textContent = r.bank_id || '';
+          const e = document.createElement('td'); e.textContent = r.status || '';
+          const f = document.createElement('td'); f.textContent = formatCurrency(r.ops_net ?? 0);
+          const g = document.createElement('td'); g.textContent = formatCurrency(r.erp_amount ?? 0);
+          const h = document.createElement('td'); h.textContent = formatCurrency(r.bank_amount ?? 0);
+          const i = document.createElement('td'); i.textContent = formatCurrency(r.variance ?? 0);
+          tr.appendChild(a); tr.appendChild(b); tr.appendChild(c); tr.appendChild(d);
+          tr.appendChild(e); tr.appendChild(f); tr.appendChild(g); tr.appendChild(h); tr.appendChild(i);
+          tbody.appendChild(tr);
         });
+      } else {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td colspan="9" class="empty">No month close rows.</td>';
+        tbody.appendChild(tr);
+      }
+    }
 
-    </script>
+    function renderCases(cases) {
+      const tbody = document.getElementById('cases-tbody');
+      tbody.innerHTML = '';
+      if (!cases || cases.length === 0) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td colspan="7" class="empty">No cases yet.</td>';
+        tbody.appendChild(tr);
+        return;
+      }
+
+      cases.forEach((c) => {
+        const tr = document.createElement('tr');
+
+        const caseCell = document.createElement('td');
+        const caseId = escapeHtml(c.case_id || '');
+        let inner = `<strong>${caseId}</strong>`;
+        if (c.learned_rule_applied) {
+          inner += ` <span class="badge green" style="margin-left:6px;">via learned rule</span>`;
+        }
+        caseCell.innerHTML = inner;
+
+        const statusCell = document.createElement('td');
+        const status = c.status || '';
+        const badge = document.createElement('span');
+        badge.className = 'badge ' + (status === 'auto_resolved' ? 'green' : (status === 'needs_review' ? 'amber' : ''));
+        badge.textContent = status || '—';
+        statusCell.appendChild(badge);
+
+        const confCell = document.createElement('td');
+        const conf = c.confidence;
+        confCell.textContent = (conf != null) ? (Math.round(conf * 100) + '%') : '—';
+
+        const methodCell = document.createElement('td');
+        methodCell.textContent = c.method || '';
+
+        const excCell = document.createElement('td');
+        excCell.textContent = c.exception_type || '';
+
+        const deltaCell = document.createElement('td');
+        deltaCell.textContent = formatCurrency(c.amount_delta ?? 0);
+
+        const actionCell = document.createElement('td');
+        const approveBtn = document.createElement('button');
+        approveBtn.textContent = 'Approve';
+        approveBtn.className = 'btn btn-secondary';
+        approveBtn.addEventListener('click', async () => {
+          approveBtn.disabled = true;
+          try {
+            const resp = await fetch('/cases/' + encodeURIComponent(c.case_id) + '/decision', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'approve' })
+            });
+            if (resp.ok) {
+              const data = await resp.json();
+              if (data && data.learned_rule_id) {
+                const note = document.createElement('div');
+                note.style.color = '#9ae6b4';
+                note.style.fontSize = '12px';
+                note.style.marginTop = '6px';
+                note.textContent = 'Learned: the agent will handle this pattern automatically next time.';
+                tr.appendChild(note);
+              }
+              await loadCases(); // refresh
+            } else {
+              throw new Error('Decision failed');
+            }
+          } catch (err) {
+            showError('Failed to approve case: ' + err.message);
+          } finally {
+            approveBtn.disabled = false;
+          }
+        });
+        actionCell.appendChild(approveBtn);
+
+        tr.appendChild(caseCell);
+        tr.appendChild(statusCell);
+        tr.appendChild(confCell);
+        tr.appendChild(methodCell);
+        tr.appendChild(excCell);
+        tr.appendChild(deltaCell);
+        tr.appendChild(actionCell);
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderRules(rules) {
+      const tbody = document.getElementById('rules-tbody');
+      tbody.innerHTML = '';
+      const empty = document.getElementById('rules-empty');
+      if (!rules || rules.length === 0) {
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+      rules.forEach(r => {
+        const tr = document.createElement('tr');
+        const p = document.createElement('td'); p.textContent = r.pattern || '';
+        const a = document.createElement('td'); a.textContent = r.action || '';
+        const h = document.createElement('td'); h.textContent = r.hit_count != null ? r.hit_count : '';
+        const en = document.createElement('td');
+        en.textContent = r.enabled ? 'true' : 'false';
+        tr.appendChild(p); tr.appendChild(a); tr.appendChild(h); tr.appendChild(en);
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Data loading
+    async function fetchJson(url, options = {}) {
+      try {
+        const res = await fetch(url, options);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        clearError();
+        return data;
+      } catch (err) {
+        showError('Failed to load ' + url + ': ' + err.message);
+        return null;
+      }
+    }
+
+    async function loadAgentLast() {
+      const data = await fetchJson('/agent/last');
+      renderActivity(data);
+    }
+
+    async function loadQuestions() {
+      const data = await fetchJson('/agent/questions');
+      if (data && Array.isArray(data.questions)) renderQuestions(data.questions);
+      else renderQuestions([]);
+    }
+
+    async function loadCases() {
+      const data = await fetchJson('/cases');
+      if (data && Array.isArray(data.cases)) renderCases(data.cases);
+      else renderCases([]);
+    }
+
+    async function loadCloseReadiness() {
+      const data = await fetchJson('/close-readiness');
+      if (data) {
+        // Update readiness tile if available
+        // Not strictly required here; it's compute in metrics
+      }
+    }
+
+    async function loadMetrics() {
+      const data = await fetchJson('/metrics');
+      renderMetrics(data);
+    }
+
+    async function loadGST() {
+      const data = await fetchJson('/gst/reconcile');
+      renderGST(data);
+    }
+
+    async function loadCloseStatus() {
+      const data = await fetchJson('/close/status');
+      renderMonthClose(data);
+    }
+
+    async function loadRules() {
+      const data = await fetchJson('/rules');
+      renderRules(data && data.rules ? data.rules : []);
+    }
+
+    async function loadAuditVerify() {
+      const data = await fetchJson('/audit/verify');
+      // Not explicitly rendered elsewhere; could flash an indicator if needed
+    }
+
+    async function loadAll() {
+      // Fire all reads
+      await Promise.all([
+        loadAgentLast(),
+        loadQuestions(),
+        loadCases(),
+        loadCloseReadiness(),
+        loadMetrics(),
+        loadGST(),
+        loadCloseStatus(),
+        loadRules(),
+        loadAuditVerify(),
+      ]);
+    }
+
+    // Run agent
+    async function runAgent() {
+      const btn = document.getElementById('runBtn');
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = 'Agent working...';
+      // Optional spinner
+      const spinner = document.createElement('span');
+      spinner.className = 'spinner';
+      btn.appendChild(spinner);
+
+      // Send a minimal payload; adjust as needed by your backend
+      let payload = {
+        goal: 'month-end close',
+        completed: false,
+        summary: ''
+      };
+      try {
+        const res = await fetch('/agent/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        // Remove spinner
+        btn.removeChild(spinner);
+        btn.textContent = original;
+        if (!res.ok) throw new Error('Run failed: HTTP ' + res.status);
+        const data = await res.json();
+        // After a run, refresh data
+        await loadAll();
+      } catch (err) {
+        // Restore button
+        btn.removeChild(spinner);
+        btn.textContent = original;
+        btn.disabled = false;
+        showError('Run failed: ' + err.message);
+        return;
+      }
+      btn.disabled = false;
+    }
+
+    // Wire up tabs
+    function setupTabs() {
+      const tabs = document.querySelectorAll('.tab');
+      tabs.forEach(tab => tab.addEventListener('click', (e) => {
+        const target = e.currentTarget.getAttribute('data-target');
+        // activate
+        tabs.forEach(t => t.classList.remove('active'));
+        e.currentTarget.classList.add('active');
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        document.getElementById(target).classList.add('active');
+      }));
+    }
+
+    // Init
+    document.addEventListener('DOMContentLoaded', () => {
+      // Bind buttons
+      document.getElementById('runBtn').addEventListener('click', runAgent);
+      document.getElementById('refreshBtn').addEventListener('click', loadAll);
+
+      setupTabs();
+      // Initial load
+      loadAll();
+    });
+  </script>
 </body>
 </html>
