@@ -1,5 +1,10 @@
 __pycache__/
+*.pyc
 *.db
 .env
+.venv/
+venv/
 node_modules/
 reconcileos.db
+dist/
+.pytest_cache/
