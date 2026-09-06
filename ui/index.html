@@ -1,973 +1,575 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>ReconcileOS - Agent Dashboard</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    :root {
-      --bg: #0b0f15;
-      --panel: #141923;
-      --surface: #1a2030;
-      --text: #e9eefb;
-      --muted: #aab4c2;
-      --border: #2a3240;
-      --amber: #f59e0b;
-      --green: #22c55e;
-      --red: #f87171;
-      --shadow: 0 6px 20px rgba(0,0,0,.25);
-    }
-    * { box-sizing: border-box; }
-    html, body { height: 100%; }
-    body {
-      margin: 0;
-      font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      line-height: 1.4;
-    }
-    .page {
-      max-width: 1150px;
-      margin: 0 auto;
-      padding: 20px 16px 60px;
-    }
-    header { margin: 6px 0 12px; }
-    .brand {
-      display: flex; align-items: baseline; gap: 12px;
-      font-weight: 800; font-size: 28px;
-    }
-    .brand .subtitle {
-      font-weight: 500; font-size: 14px; color: var(--muted);
-    }
-    .toolbar { display: flex; align-items: center; gap: 12px; margin: 6px 0 18px; }
-    .btn {
-      border: none; padding: 12px 18px; border-radius: 8px;
-      font-weight: 700; cursor: pointer;
-    }
-    .btn-primary { background: #2563eb; color: white; }
-    .btn-secondary { background: #2b3240; color: #e9e9e9; border: 1px solid #3b465e; }
-    .btn[disabled] { opacity: 0.6; cursor: not-allowed; }
-    .spinner {
-      display: inline-block; width: 12px; height: 12px;
-      border: 2px solid #fff; border-top-color: transparent;
-      border-radius: 50%; vertical-align: middle;
-      animation: spin 0.8s linear infinite; margin-left: 8px;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ReconcileOS — month-end close</title>
+<style>
+:root{
+  --paper:#F6F7F9;
+  --card:#FFFFFF;
+  --rule:#DDE2E9;
+  --rule-soft:#EBEEF3;
+  --ink:#121922;
+  --ink-2:#3D4956;
+  --muted:#6B7787;
+  --oxblood:#96242A;
+  --oxblood-bg:#FBEFEF;
+  --ledger:#1B6B4E;
+  --ledger-bg:#EDF6F1;
+  --brass:#8A5A0B;
+  --brass-bg:#FBF3E4;
+  --accent:#1F3A5F;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --serif:Georgia,"Iowan Old Style","Times New Roman",serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper); color:var(--ink);
+  font-family:var(--sans); font-size:15px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+.num{font-variant-numeric:tabular-nums lining-nums}
+.wrap{max-width:1060px;margin:0 auto;padding:0 24px 96px}
 
-    .error-banner {
-      display: none;
-      background: #300606;
-      color: #ffd6d6;
-      border: 1px solid #ff6b6b;
-      padding: 12px 14px;
-      border-radius: 8px;
-      margin: 6px 0 14px;
-    }
+/* ---------- masthead ---------- */
+.masthead{border-bottom:2px solid var(--ink);margin-bottom:0;padding:36px 0 18px}
+.masthead h1{
+  font-family:var(--serif); font-size:34px; line-height:1.1; font-weight:400;
+  margin:0 0 6px; letter-spacing:-.01em;
+}
+.masthead p{margin:0;color:var(--muted);font-size:15px;max-width:62ch}
+.period{margin-top:14px;font-size:13px;color:var(--muted)}
+.period b{color:var(--ink-2);font-weight:600}
+.demo-flag{border:1px solid var(--brass);color:var(--brass);background:var(--brass-bg);
+  padding:1px 8px;border-radius:3px;font-size:12px}
+.note{margin:10px 0 0;font-size:13px;line-height:1.55;color:var(--muted);max-width:70ch}
+.or{font-size:13px;color:var(--muted);margin:0 2px 0 8px}
 
-    .container { display: grid; grid-template-columns: 1fr; gap: 14px; }
+/* ---------- controls ---------- */
+.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:18px 0;border-bottom:1px solid var(--rule)}
+button{font-family:inherit;font-size:14px;cursor:pointer;border-radius:3px}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn-primary{
+  background:var(--ink); color:#fff; border:1px solid var(--ink);
+  padding:10px 20px; font-weight:600;
+}
+.btn-primary:hover{background:#000}
+.btn-primary[disabled]{background:var(--muted);border-color:var(--muted);cursor:progress}
+.btn-quiet{background:transparent;color:var(--ink-2);border:1px solid var(--rule);padding:9px 14px}
+.btn-quiet:hover{border-color:var(--ink-2);color:var(--ink)}
+.btn-mini{background:transparent;border:1px solid var(--rule);color:var(--ink-2);padding:4px 11px;font-size:13px}
+.btn-mini:hover{border-color:var(--ledger);color:var(--ledger)}
+.spinner{
+  width:13px;height:13px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;
+  border-radius:50%;display:inline-block;vertical-align:-2px;margin-right:7px;
+  animation:spin .7s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spinner{animation:none}}
 
-    .panel {
-      background: #0f1320;
-      border: 1px solid #2a3240;
-      border-radius: 12px;
-      padding: 16px;
-      box-shadow: var(--shadow);
-    }
-    .panel h2 { margin: 0 0 8px; font-size: 16px; color: #e6eaf6; }
-    .section-title { font-size: 12px; color: #aab4c2; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .4px; }
+/* ---------- banner ---------- */
+.banner{display:none;margin:16px 0;padding:11px 14px;border-left:3px solid var(--oxblood);
+  background:var(--oxblood-bg);color:var(--oxblood);font-size:14px}
+.banner.on{display:block}
 
-    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
-    .tile {
-      background: #141a2a; padding: 12px; border-radius: 8px;
-      border: 1px solid #2a3240; min-height: 72px;
-      display: flex; flex-direction: column; justify-content: center;
-    }
-    .tile .label { font-size: 12px; color: #a9b4c2; }
-    .tile .value { font-size: 22px; font-weight: 700; color: #eaf2ff; margin-top: 6px; }
+/* ---------- section headings ---------- */
+section{padding:34px 0;border-bottom:1px solid var(--rule)}
+section > h2{
+  font-family:var(--sans); font-size:12px; font-weight:700; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted); margin:0 0 4px;
+}
+.sub{margin:0 0 20px;color:var(--muted);font-size:14px;max-width:64ch}
+.section-head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap}
 
-    /* Timeline (Agent Activity) */
-    .timeline { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
-    .step {
-      display: grid; grid-template-columns: 44px 1fr; gap: 12px;
-      padding: 8px; border: 1px solid #2a3240; border-radius: 8px; background: #0b1020;
-    }
-    .step.refused { border-left: 4px solid var(--amber); background: rgba(245,158,11,.08); }
-    .refused-label { grid-column: 1 / -1; justify-self: start; align-self: center;
-      font-size: 12px; color: #fbd38d; background: rgba(245,158,11,.15);
-      padding: 2px 6px; border-radius: 6px; margin-bottom: 4px;
-      border: 1px solid rgba(245,158,11,.5);
-    }
-    .step-num {
-      font-family: ui-monospace,SFMono-Regular,Monaco,Consolas,"Liberation Mono", monospace;
-      font-weight: 700; font-size: 14px; color: #fff;
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 32px; height: 32px; border-radius: 6px;
-      background: #1f2a44; border: 1px solid #2a3240;
-    }
-    .step-content { display: flex; flex-direction: column; gap: 6px; }
-    .thought { font-size: 14px; color: #e7eaf3; }
-    .tool { font-family: ui-monospace,SFMono-Regular,Monaco,Consolas,"Liberation Mono", monospace;
-            font-size: 12px; color: #e2e7f0; }
-    .pill {
-      font-family: ui-monospace,SFMono-Regular,Monaco,Consolas,"Liberation Mono", monospace;
-      font-size: 12px; padding: 2px 6px; border-radius: 6px;
-      background: #1f2a44; border: 1px solid #2a3240; display: inline-block;
-      margin-left: 6px;
-    }
-    .json { white-space: pre-wrap; background: #0b1120; border: 1px solid #2a3240;
-             padding: 6px; border-radius: 6px; font-family: ui-monospace,SFMono-Regular,Monaco,Consolas,"Liberation Mono", monospace; font-size: 12px; color: #d8e2f6; }
+/* ---------- figures row ---------- */
+.figures{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:0;
+  border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.fig{padding:16px 18px 16px 0;border-right:1px solid var(--rule-soft)}
+.fig:last-child{border-right:0}
+.fig .k{font-size:12px;color:var(--muted);margin-bottom:5px}
+.fig .v{font-size:26px;font-weight:600;letter-spacing:-.02em;line-height:1.1}
+.fig .v.ok{color:var(--ledger)} .fig .v.bad{color:var(--oxblood)} .fig .v.warn{color:var(--brass)}
 
-    .error { color: #ff6b6b; font-weight: 600; }
+/* ---------- agent transcript ---------- */
+.run-meta{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-bottom:20px}
+.run-meta b{color:var(--ink-2)}
+.summary{
+  font-family:var(--serif);font-size:16px;line-height:1.65;color:var(--ink-2);
+  border-left:3px solid var(--rule);padding:2px 0 2px 18px;margin:0 0 26px;
+  white-space:pre-wrap;max-width:74ch;
+}
+ol.steps{list-style:none;margin:0;padding:0;counter-reset:s}
+ol.steps li{
+  counter-increment:s; position:relative; padding:16px 0 16px 46px;
+  border-top:1px solid var(--rule-soft);
+}
+ol.steps li:first-child{border-top:1px solid var(--rule)}
+ol.steps li::before{
+  content:counter(s); position:absolute; left:0; top:17px;
+  width:26px;height:26px;line-height:25px;text-align:center;
+  border:1px solid var(--rule);border-radius:50%;
+  font-size:12px;font-weight:600;color:var(--muted);background:var(--card);
+  font-variant-numeric:tabular-nums;
+}
+li.refused{background:var(--oxblood-bg);margin-left:-14px;padding-left:60px;border-radius:2px}
+li.refused::before{left:14px;border-color:var(--oxblood);color:var(--oxblood)}
+.thought{font-family:var(--serif);font-size:15.5px;line-height:1.6;color:var(--ink);margin:0 0 9px;max-width:72ch}
+.tool{font-family:var(--mono);font-size:12.5px;color:var(--accent);background:#EEF2F7;
+  border:1px solid #DCE4EE;padding:1px 7px;border-radius:3px;display:inline-block}
+.refused-tag{font-size:11px;font-weight:700;letter-spacing:.07em;color:var(--oxblood);
+  border:1px solid var(--oxblood);padding:1px 7px;border-radius:3px;margin-left:8px}
+.obs{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:8px;
+  white-space:pre-wrap;word-break:break-word;max-height:76px;overflow:auto}
+.obs.err{color:var(--oxblood)}
+.empty{color:var(--muted);font-size:14px;padding:22px 0;font-style:italic}
 
-    table { border-collapse: collapse; width: 100%; }
-    th, td { padding: 6px 8px; border-bottom: 1px solid #2a3240; font-size: 12px; text-align: left; }
-    th { color: #cbd6e6; }
-    tr:hover td { background: rgba(255,255,255,.02); }
+/* ---------- questions ---------- */
+.q{border:1px solid var(--brass);background:var(--brass-bg);padding:16px 18px;margin-bottom:12px;border-radius:3px}
+.q .qt{font-family:var(--serif);font-size:16px;line-height:1.55;margin:0 0 12px;color:#4A3106}
+.q .qm{font-size:12px;color:var(--brass);margin-bottom:8px;font-variant-numeric:tabular-nums}
+.learned{margin-top:10px;font-size:13px;color:var(--ledger)}
 
-    .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
-    .badge.green { background: #16a34a; color: white; }
-    .badge.amber { background: #f59e0b; color: #1b120f; }
-    .badge.red { background: #e11d48; color: white; }
+/* ---------- tables ---------- */
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);
+  font-weight:600;padding:0 12px 9px 0;border-bottom:1px solid var(--ink)}
+td{padding:11px 12px 11px 0;border-bottom:1px solid var(--rule-soft);vertical-align:top}
+th.r,td.r{text-align:right;padding-right:0}
+tbody tr:hover{background:#FAFBFC}
+.pill{display:inline-block;font-size:12px;padding:2px 9px;border-radius:11px;white-space:nowrap}
+.pill.ok{background:var(--ledger-bg);color:var(--ledger)}
+.pill.warn{background:var(--brass-bg);color:var(--brass)}
+.pill.bad{background:var(--oxblood-bg);color:var(--oxblood)}
+.tag{font-size:11px;color:var(--ledger);border:1px solid #BFDDCE;background:var(--ledger-bg);
+  padding:1px 6px;border-radius:3px;margin-left:6px;white-space:nowrap}
+.mono{font-family:var(--mono);font-size:12.5px}
+.dim{color:var(--muted)}
 
-    /* Tabs */
-    .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 12px; }
-    .tab { padding: 8px 12px; border-radius: 6px; border: 1px solid #2a3240; background: #0f1220; color: #e5e7eb; cursor: pointer; font-weight: 700; }
-    .tab.active { background: #1a1f2e; border-color: #3b465f; }
-    .tab-panel { display: none; padding-top: 6px; }
-    .tab-panel.active { display: block; }
+/* ---------- bars ---------- */
+.bars{display:grid;gap:9px;max-width:520px}
+.bar{display:grid;grid-template-columns:170px 1fr 40px;align-items:center;gap:12px;font-size:13px}
+.bar .track{height:9px;background:var(--rule-soft);border-radius:1px;overflow:hidden}
+.bar .fill{height:100%;background:var(--accent)}
+.bar .n{text-align:right;color:var(--ink-2)}
 
-    /* Minor helper note for empty states */
-    .empty { color: var(--muted); font-style: italic; }
+/* ---------- drafts ---------- */
+.draft{border:1px solid var(--rule);background:var(--card);padding:15px 17px;margin-bottom:10px;border-radius:3px}
+.draft .to{font-family:var(--mono);font-size:12.5px;color:var(--accent)}
+.draft .sj{font-weight:600;margin:5px 0 7px;font-size:14.5px}
+.draft .bd{font-size:13px;color:var(--muted);line-height:1.55;max-width:74ch;
+  border-left:2px solid var(--rule-soft);padding-left:12px}
+.draft .row{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-top:11px}
 
-    /* Responsive tweaks */
-    @media (max-width: 900px) {
-      .page { padding: 12px; }
-      .timeline { gap: 8px; }
-      .step { grid-template-columns: 40px 1fr; }
-    }
-
-    /* Vendor Chasers panel specific tweaks can live here if needed */
-  </style>
+@media (max-width:640px){
+  .masthead h1{font-size:27px}
+  .bar{grid-template-columns:110px 1fr 36px}
+  .fig{border-right:0;border-bottom:1px solid var(--rule-soft)}
+  ol.steps li{padding-left:38px}
+}
+</style>
 </head>
 <body>
-  <div id="errorbar" class="error-banner" role="alert" aria-live="polite" style="display:none;"></div>
+<div class="wrap">
 
-  <div class="page">
-    <header aria-label="Header">
-      <div class="brand">
-        ReconcileOS
-        <span class="subtitle">An agent that runs the month-end close</span>
-      </div>
-    </header>
+  <header class="masthead">
+    <h1>ReconcileOS</h1>
+    <p>An agent closes the books: it reconciles the ledgers, checks GST against GSTR-2B,
+       ties out the month, and brings you what it could not decide on its own.</p>
+    <div class="period">Period <b>August 2026</b> · Policy <b>v1</b> ·
+      <span class="demo-flag">Sample data</span></div>
+    <p class="note">Figures below come from a seeded demonstration dataset — 11 card lines, 9 bank
+      lines, a purchase register and an operations export, generated on first load so the numbers are
+      reproducible between runs. Nothing here is a real ledger.</p>
+  </header>
 
-    <div class="toolbar" aria-label="Agent controls">
-      <button id="runBtn" class="btn btn-primary" title="Run the agent">Run the agent</button>
-      <button id="refreshBtn" class="btn btn-secondary" title="Refresh data">Refresh</button>
-    </div>
-
-    <section class="panel" id="agent-activity" aria-label="Agent activity">
-      <h2>AGENT ACTIVITY</h2>
-      <div id="activity-summary" class="text-muted" style="margin-bottom:6px;"></div>
-      <div class="timeline" id="timeline" aria-label="Agent steps">
-        <!-- Steps rendered here -->
-      </div>
-      <div id="activity-empty" class="empty" style="display:none; margin-top:6px;">No runs yet. Click "Run the agent" to start.</div>
-    </section>
-
-    <section class="panel" id="agent-questions" aria-label="Agent questions">
-      <h2>AGENT QUESTIONS</h2>
-      <div id="questions" class="grid" style="display:flex; flex-direction:column; gap:10px;">
-        <!-- Questions will render here as cards -->
-      </div>
-      <div id="questions-empty" class="empty" style="display:none; margin-top:6px;">No questions at this time.</div>
-    </section>
-
-    <section class="panel" id="stats-section" aria-label="Stats">
-      <h2>STAT TILES</h2>
-      <div class="cards" id="stats-grid">
-        <div class="tile" aria-label="Close readiness">
-          <span class="label">Close readiness</span>
-          <span class="value" id="tile-readiness">0.0%</span>
-        </div>
-        <div class="tile" aria-label="Total cases">
-          <span class="label">Total cases</span>
-          <span class="value" id="tile-total-cases">0</span>
-        </div>
-        <div class="tile" aria-label="Auto-resolved">
-          <span class="label">Auto-resolved</span>
-          <span class="value" id="tile-auto-resolved">0</span>
-        </div>
-        <div class="tile" aria-label="Needs review">
-          <span class="label">Needs review</span>
-          <span class="value" id="tile-needs-review">0</span>
-        </div>
-        <div class="tile" aria-label="Audit status">
-          <span class="label">Audit status</span>
-          <span class="value" id="tile-audit-status">UNKNOWN</span>
-        </div>
-      </div>
-    </section>
-
-    <section class="panel" id="tabs-section" aria-label="Data sections">
-      <div class="tabs" role="tablist" aria-label="Data sections tabs">
-        <button class="tab active" data-target="cases-panel" aria-selected="true" role="tab" id="tab-cases">CASES</button>
-        <button class="tab" data-target="gst-panel" aria-selected="false" role="tab" id="tab-gst">GST</button>
-        <button class="tab" data-target="month-panel" aria-selected="false" role="tab" id="tab-month">MONTH CLOSE</button>
-      </div>
-
-      <div id="cases-panel" class="tab-panel active" role="tabpanel" aria-labelledby="tab-cases">
-        <div class="scroll" style="max-height: 420px;">
-          <table class="table" id="cases-table" style="width:100%;">
-            <thead>
-              <tr>
-                <th>Case</th>
-                <th>Status</th>
-                <th>Confidence</th>
-                <th>Method</th>
-                <th>Exception</th>
-                <th>Amount delta</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="cases-tbody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div id="gst-panel" class="tab-panel" role="tabpanel" aria-labelledby="tab-gst">
-        <div class="scroll" style="max-height: 420px;">
-          <div class="tile" style="margin-bottom:12px;">
-            <span class="label" style="font-weight:600;">Input tax credit at risk</span>
-            <span class="value" id="gst-credit" style="font-size:28px; margin-left: 8px;">$0.00</span>
-          </div>
-          <table class="table" id="gst-table" style="width:100%;">
-            <thead>
-              <tr><th>Invoice</th><th>Supplier GSTIN</th><th>Type</th><th>Taxable delta</th></tr>
-            </thead>
-            <tbody id="gst-tbody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div id="month-panel" class="tab-panel" role="tabpanel" aria-labelledby="tab-month">
-        <div class="scroll" style="max-height: 420px;">
-          <div class="tile" style="margin-bottom:12px;">
-            <span class="label" style="font-weight:600;">Summary</span>
-            <span class="value" id="month-summary" style="font-size:28px; margin-left: 8px;">0 / 0 / 0</span>
-          </div>
-          <div class="tile" style="margin-bottom:12px;">
-            <span class="label" style="font-weight:600;">Readiness</span>
-            <span class="value" id="month-readiness" style="font-size:28px; margin-left: 8px;">0%</span>
-          </div>
-          <table class="table" id="month-table" style="width:100%;">
-            <thead>
-              <tr><th>Order Ref</th><th>Ops ID</th><th>ERP ID</th><th>Bank ID</th><th>Status</th><th>Ops net</th><th>ERP amount</th><th>Bank amount</th><th>Variance</th></tr>
-            </thead>
-            <tbody id="month-tbody"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <!-- Vendor Chasers Panel: added below GST section -->
-    <section class="panel" id="vendor-panel" aria-label="Vendor chasers" style="margin-top: 16px;">
-      <div style="display:flex; align-items: center; justify-content: space-between;">
-        <div>
-          <h2 style="margin:0 0 6px;">Vendor chasers</h2>
-          <div class="text-muted" style="font-size: 12px; color: var(--muted); margin: 0;">
-            These are email drafts prepared by the agent that have NOT been sent yet.
-          </div>
-        </div>
-        <div style="display:flex; gap:8px; align-items: center;">
-          <span class="badge amber" id="vc-pending" aria-label="Pending drafts" style="font-variant-numeric: tabular-nums;">0</span>
-          <span class="badge green" id="vc-sent" aria-label="Sent drafts" style="font-variant-numeric: tabular-nums;">0</span>
-          <span class="badge red" id="vc-failed" aria-label="Failed sends" style="font-variant-numeric: tabular-nums;">0</span>
-          <button id="vendor-send-all" class="btn btn-secondary" title="Send all vendor drafts" style="white-space: nowrap;">Send all</button>
-        </div>
-      </div>
-
-      <div id="vendor-list" style="display:flex; flex-direction:column; gap:12px; margin-top:12px; max-height: 420px; overflow:auto;">
-        <!-- Vendor cards get injected here -->
-      </div>
-
-      <div id="vendor-empty" class="empty" style="display:none; margin-top:6px;">No vendor chasers pending</div>
-    </section>
-
-    <section class="panel" id="learned-section" aria-label="Learned rules">
-      <h2>LEARNED RULES</h2>
-      <div class="scroll" style="max-height: 320px;">
-        <table class="table" id="rules-table" style="width:100%;">
-          <thead>
-            <tr><th>Pattern</th><th>Action</th><th>Hit count</th><th>Enabled</th></tr>
-          </thead>
-          <tbody id="rules-tbody"></tbody>
-        </table>
-      </div>
-      <div id="rules-empty" class="empty" style="margin-top:6px; display:none;">No learned rules yet.</div>
-    </section>
+  <div class="controls">
+    <button id="run" class="btn-primary" data-goal="full">Run the whole close</button>
+    <span class="or">or ask it to do one thing:</span>
+    <button class="btn-quiet task" data-goal="cash">Match card to bank</button>
+    <button class="btn-quiet task" data-goal="gst">Check GST</button>
+    <button class="btn-quiet task" data-goal="close">Tie out the month</button>
+  </div>
+  <div class="controls" style="border-bottom:1px solid var(--rule);padding-top:0">
+    <button id="refresh" class="btn-quiet">Refresh</button>
+    <button id="reset" class="btn-quiet">Start over</button>
+    <span id="runmeta" class="dim" style="font-size:13px"></span>
   </div>
 
-  <script>
-    // Utility helpers
-    function escapeHtml(s) {
-      if (s == null) return '';
-      return String(s).replace(/[&<>"']/g, function (m) {
-        return ({
-          '&': '&amp;',
-          '<': '&lt;',
-          '>': '&gt;',
-          '"': '&quot;',
-          "'": '&#39;'
-        })[m];
-      });
-    }
-
-    function formatCurrency(n) {
-      const v = Number(n) || 0;
-      // Use locale for thousands separators
-      return '$' + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-
-    function safeJson(obj) {
-      try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
-    }
-
-    // Error banner management
-    const errorBar = document.getElementById('errorbar');
-    function showError(msg) {
-      if (!msg) return;
-      errorBar.textContent = String(msg);
-      errorBar.style.display = 'block';
-    }
-    function clearError() {
-      errorBar.style.display = 'none';
-      errorBar.textContent = '';
-    }
-
-    // Data renderers
-    function renderActivity(data) {
-      const summaryEl = document.getElementById('activity-empty');
-      const timelineEl = document.getElementById('timeline');
-      const summaryBox = document.getElementById('activity-summary');
-      timelineEl.innerHTML = '';
-
-      if (!data || !Array.isArray(data.steps) || data.steps.length === 0) {
-        document.getElementById('activity-empty').style.display = 'block';
-        summaryBox.textContent = '';
-        return;
-      }
-      document.getElementById('activity-empty').style.display = 'none';
-      summaryBox.innerHTML = (data.summary ? escapeHtml(data.summary) : '') +
-        (data.stopped_reason ? `<div class="text-muted" style="margin-top:6px;">Stopped: ${escapeHtml(data.stopped_reason)}</div>` : '');
-      // Build steps
-      data.steps.forEach((step, idx) => {
-        const isRefused = (step.observation && step.observation.refused === true) ||
-                          (step.error && String(step.error).toLowerCase().includes('policy blocks'));
-
-        // Step container
-        const stepDiv = document.createElement('div');
-        stepDiv.className = 'step' + (isRefused ? ' refused' : '');
-
-        // Refused label across both columns
-        if (isRefused) {
-          const label = document.createElement('div');
-          label.className = 'refused-label';
-          label.style.gridColumn = '1 / -1';
-          label.textContent = 'REFUSED BY POLICY';
-          stepDiv.appendChild(label);
-        }
-
-        // Step number
-        const numDiv = document.createElement('div');
-        numDiv.className = 'step-num';
-        numDiv.textContent = (step.n != null ? step.n : idx + 1);
-        stepDiv.appendChild(numDiv);
-
-        // Content
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'step-content';
-        const thoughtDiv = document.createElement('div');
-        thoughtDiv.className = 'thought';
-        thoughtDiv.innerHTML = `<strong>Thought:</strong> ${escapeHtml(step.thought || '')}`;
-        const toolDiv = document.createElement('div');
-        toolDiv.className = 'tool';
-        const toolName = escapeHtml(step.tool || '');
-        toolDiv.innerHTML = `Tool:<span class="pill">${toolName}</span>`;
-
-        contentDiv.appendChild(thoughtDiv);
-        contentDiv.appendChild(toolDiv);
-
-        if (step.observation != null) {
-          const obsPre = document.createElement('pre');
-          obsPre.className = 'json';
-          obsPre.style.margin = '6px 0 0';
-          obsPre.textContent = safeJson(step.observation);
-          contentDiv.appendChild(document.createElement('div')).appendChild(obsPre);
-        } else if (step.error) {
-          const errDiv = document.createElement('div');
-          errDiv.className = 'error';
-          errDiv.style.marginTop = '6px';
-          errDiv.textContent = 'Error: ' + String(step.error);
-          contentDiv.appendChild(errDiv);
-        }
-
-        stepDiv.appendChild(contentDiv);
-        timelineEl.appendChild(stepDiv);
-      });
-    }
-
-    function renderQuestions(data) {
-      const qContainer = document.getElementById('questions');
-      const empty = document.getElementById('questions-empty');
-      qContainer.innerHTML = '';
-      if (!data || !Array.isArray(data) || data.length === 0) {
-        empty.style.display = 'block';
-        return;
-      }
-      empty.style.display = 'none';
-      data.forEach(q => {
-        const card = document.createElement('div');
-        card.style.border = '1px solid #2a3240';
-        card.style.borderRadius = '8px';
-        card.style.padding = '10px';
-        card.style.background = '#11172b';
-        const id = escapeHtml(q.case_id || '');
-        const text = escapeHtml(q.question || '');
-        card.innerHTML = `<div style="font-weight:700; font-family: ui-monospace, SFMono-Regular, monospace;">Case ${id}</div>
-                          <div style="margin-top:6px;">${text}</div>`;
-        const btn = document.createElement('button');
-        btn.textContent = 'Approve';
-        btn.className = 'btn btn-secondary';
-        btn.style.marginTop = '8px';
-        btn.addEventListener('click', async () => {
-          btn.disabled = true;
-          try {
-            const resp = await fetch('/cases/' + encodeURIComponent(q.case_id) + '/decision', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'approve' })
-            });
-            if (resp.ok) {
-              const data = await resp.json();
-              if (data && data.learned_rule_id) {
-                const note = document.createElement('div');
-                note.style.color = '#9ae6b4';
-                note.style.fontSize = '12px';
-                note.style.marginTop = '6px';
-                note.textContent = 'Learned: the agent will handle this pattern automatically next time.';
-                card.appendChild(note);
-              }
-              // Refresh questions
-              await loadQuestions();
-            } else {
-              throw new Error('Decision failed');
-            }
-          } catch (err) {
-            showError('Failed to approve question: ' + err.message);
-          } finally {
-            btn.disabled = false;
-          }
-        });
-        card.appendChild(btn);
-        qContainer.appendChild(card);
-      });
-    }
-
-    function renderReadiness(data) {
-      // Not used directly here; integrated in metrics
-    }
-
-    function renderMetrics(data) {
-      const readinessTile = document.getElementById('tile-readiness');
-      const totalTile = document.getElementById('tile-total-cases');
-      const autoTile = document.getElementById('tile-auto-resolved');
-      const needsTile = document.getElementById('tile-needs-review');
-      const auditTile = document.getElementById('tile-audit-status');
-
-      if (data && typeof data === 'object') {
-        const readiness = data.readiness != null ? Number(data.readiness) : null;
-        if (readiness != null) readinessTile.textContent = Number(readiness).toFixed(1) + '%';
-        else readinessTile.textContent = '0.0%';
-
-        if (data.counts && data.counts.total != null) totalTile.textContent = data.counts.total;
-        else totalTile.textContent = data.total != null ? data.total : (data.counts?.length ?? 0);
-
-        autoTile.textContent = data.auto_resolved != null ? data.auto_resolved : (data.counts?.auto_resolved ?? 0);
-        needsTile.textContent = data.needs_review != null ? data.needs_review : (data.counts?.needs_review ?? 0);
-
-        auditTile.textContent = data.audit_ok === true ? 'VERIFIED' : 'BROKEN';
-        auditTile.style.color = data.audit_ok === true ? '#22c55e' : '#f87171';
-      } else {
-        readinessTile.textContent = '0.0%';
-        totalTile.textContent = '0';
-        autoTile.textContent = '0';
-        needsTile.textContent = '0';
-        auditTile.textContent = 'UNKNOWN';
-      }
-    }
-
-    function renderGST(data) {
-      // Credit figure
-      const creditEl = document.getElementById('gst-credit');
-      if (data && (data.itc_at_risk != null)) {
-        creditEl.textContent = formatCurrency(data.itc_at_risk);
-      } else if (data && data.itc_at_risk == null && data.matched != null) {
-        creditEl.textContent = formatCurrency(0);
-      } else {
-        creditEl.textContent = formatCurrency(0);
-      }
-
-      const tbody = document.getElementById('gst-tbody');
-      tbody.innerHTML = '';
-      if (data && Array.isArray(data.exceptions) && data.exceptions.length > 0) {
-        data.exceptions.forEach(ex => {
-          const tr = document.createElement('tr');
-          const invoice = document.createElement('td'); invoice.textContent = ex.invoice_number || '';
-          const gstin = document.createElement('td'); gstin.textContent = ex.supplier_gstin || '';
-          const type = document.createElement('td'); type.textContent = ex.exception_type || '';
-          const delta = document.createElement('td'); delta.textContent = formatCurrency(ex.taxable_delta ?? 0);
-          tr.appendChild(invoice);
-          tr.appendChild(gstin);
-          tr.appendChild(type);
-          tr.appendChild(delta);
-          tbody.appendChild(tr);
-        });
-      } else {
-        const tr = document.createElement('tr');
-        tr.innerHTML = '<td colspan="4" class="empty">No GST exceptions.</td>';
-        tbody.appendChild(tr);
-      }
-    }
-
-    function renderMonthClose(data) {
-      // Summary and readiness
-      const summaryEl = document.getElementById('month-summary');
-      const readinessEl = document.getElementById('month-readiness');
-      const tbody = document.getElementById('month-tbody');
-      if (data && data.summary) {
-        const s = data.summary;
-        summaryEl.textContent = `Closed ${s.closed} / Partial ${s.partial} / Orphan ${s.orphan} / Total ${s.total}`;
-      } else {
-        summaryEl.textContent = '0 / 0 / 0 / 0';
-      }
-
-      readinessEl.textContent = (data && data.readiness != null) ? Number(data.readiness).toFixed(1) + '%' : '0%';
-
-      // Rows
-      tbody.innerHTML = '';
-      if (data && Array.isArray(data.rows) && data.rows.length > 0) {
-        data.rows.forEach(r => {
-          const tr = document.createElement('tr');
-          const a = document.createElement('td'); a.textContent = r.order_ref || '';
-          const b = document.createElement('td'); b.textContent = r.ops_id || '';
-          const c = document.createElement('td'); c.textContent = r.erp_id || '';
-          const d = document.createElement('td'); d.textContent = r.bank_id || '';
-          const e = document.createElement('td'); e.textContent = r.status || '';
-          const f = document.createElement('td'); f.textContent = formatCurrency(r.ops_net ?? 0);
-          const g = document.createElement('td'); g.textContent = formatCurrency(r.erp_amount ?? 0);
-          const h = document.createElement('td'); h.textContent = formatCurrency(r.bank_amount ?? 0);
-          const i = document.createElement('td'); i.textContent = formatCurrency(r.variance ?? 0);
-          tr.appendChild(a); tr.appendChild(b); tr.appendChild(c); tr.appendChild(d);
-          tr.appendChild(e); tr.appendChild(f); tr.appendChild(g); tr.appendChild(h); tr.appendChild(i);
-          tbody.appendChild(tr);
-        });
-      } else {
-        const tr = document.createElement('tr');
-        tr.innerHTML = '<td colspan="9" class="empty">No month close rows.</td>';
-        tbody.appendChild(tr);
-      }
-    }
-
-    function renderCases(cases) {
-      const tbody = document.getElementById('cases-tbody');
-      tbody.innerHTML = '';
-      if (!cases || cases.length === 0) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = '<td colspan="7" class="empty">No cases yet.</td>';
-        tbody.appendChild(tr);
-        return;
-      }
-
-      cases.forEach((c) => {
-        const tr = document.createElement('tr');
-
-        const caseCell = document.createElement('td');
-        const caseId = escapeHtml(c.case_id || '');
-        let inner = `<strong>${caseId}</strong>`;
-        if (c.learned_rule_applied) {
-          inner += ` <span class="badge green" style="margin-left:6px;">via learned rule</span>`;
-        }
-        caseCell.innerHTML = inner;
-
-        const statusCell = document.createElement('td');
-        const status = c.status || '';
-        const badge = document.createElement('span');
-        badge.className = 'badge ' + (status === 'auto_resolved' ? 'green' : (status === 'needs_review' ? 'amber' : ''));
-        badge.textContent = status || '—';
-        statusCell.appendChild(badge);
-
-        const confCell = document.createElement('td');
-        const conf = c.confidence;
-        confCell.textContent = (conf != null) ? (Math.round(conf * 100) + '%') : '—';
-
-        const methodCell = document.createElement('td');
-        methodCell.textContent = c.method || '';
-
-        const excCell = document.createElement('td');
-        excCell.textContent = c.exception_type || '';
-
-        const deltaCell = document.createElement('td');
-        deltaCell.textContent = formatCurrency(c.amount_delta ?? 0);
-
-        const actionCell = document.createElement('td');
-        const approveBtn = document.createElement('button');
-        approveBtn.textContent = 'Approve';
-        approveBtn.className = 'btn btn-secondary';
-        approveBtn.addEventListener('click', async () => {
-          approveBtn.disabled = true;
-          try {
-            const resp = await fetch('/cases/' + encodeURIComponent(c.case_id) + '/decision', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'approve' })
-            });
-            if (resp.ok) {
-              const data = await resp.json();
-              if (data && data.learned_rule_id) {
-                const note = document.createElement('div');
-                note.style.color = '#9ae6b4';
-                note.style.fontSize = '12px';
-                note.style.marginTop = '6px';
-                note.textContent = 'Learned: the agent will handle this pattern automatically next time.';
-                tr.appendChild(note);
-              }
-              await loadCases(); // refresh
-            } else {
-              throw new Error('Decision failed');
-            }
-          } catch (err) {
-            showError('Failed to approve case: ' + err.message);
-          } finally {
-            approveBtn.disabled = false;
-          }
-        });
-        actionCell.appendChild(approveBtn);
-
-        tr.appendChild(caseCell);
-        tr.appendChild(statusCell);
-        tr.appendChild(confCell);
-        tr.appendChild(methodCell);
-        tr.appendChild(excCell);
-        tr.appendChild(deltaCell);
-        tr.appendChild(actionCell);
-
-        tbody.appendChild(tr);
-      });
-    }
-
-    function renderRules(rules) {
-      const tbody = document.getElementById('rules-tbody');
-      tbody.innerHTML = '';
-      const empty = document.getElementById('rules-empty');
-      if (!rules || rules.length === 0) {
-        empty.style.display = 'block';
-        return;
-      }
-      empty.style.display = 'none';
-      rules.forEach(r => {
-        const tr = document.createElement('tr');
-        const p = document.createElement('td'); p.textContent = r.pattern || '';
-        const a = document.createElement('td'); a.textContent = r.action || '';
-        const h = document.createElement('td'); h.textContent = r.hit_count != null ? r.hit_count : '';
-        const en = document.createElement('td');
-        en.textContent = r.enabled ? 'true' : 'false';
-        tr.appendChild(p); tr.appendChild(a); tr.appendChild(h); tr.appendChild(en);
-        tbody.appendChild(tr);
-      });
-    }
-
-    // Vendor Chasers rendering
-    function renderVendorChasers(data) {
-      // data expected: { pending: [{id, channel, recipient, subject, body, case_id, status, attempts}], stats: {pending, sent, failed} }
-      const pendingList = Array.isArray(data?.pending) ? data.pending : [];
-      const stats = data?.stats ?? {};
-
-      // Update counts (treat missing as 0)
-      const pCount = Number(stats.pending ?? 0);
-      const sCount = Number(stats.sent ?? 0);
-      const fCount = Number(stats.failed ?? 0);
-
-      const pendingTag = document.getElementById('vc-pending');
-      const sentTag = document.getElementById('vc-sent');
-      const failedTag = document.getElementById('vc-failed');
-      if (pendingTag) pendingTag.textContent = String(pCount);
-      if (sentTag) sentTag.textContent = String(sCount);
-      if (failedTag) failedTag.textContent = String(fCount);
-
-      const listEl = document.getElementById('vendor-list');
-      const emptyEl = document.getElementById('vendor-empty');
-      listEl.innerHTML = '';
-
-      if (!Array.isArray(pendingList) || pendingList.length === 0) {
-        emptyEl.style.display = 'block';
-        // Ensure the list is empty visually
-        if (listEl) listEl.style.display = 'none';
-        return;
-      }
-
-      emptyEl.style.display = 'none';
-      listEl.style.display = 'flex';
-
-      pendingList.forEach(draft => {
-        const card = document.createElement('div');
-        card.className = 'tile';
-        card.style.padding = '12px';
-        card.style.display = 'flex';
-        card.style.flexDirection = 'column';
-        card.style.alignItems = 'stretch';
-        card.style.justifyContent = 'center';
-        card.style.background = '#11172b';
-        card.style.border = '1px solid #2a3240';
-        card.style.borderRadius = '8px';
-        card.style.minHeight = 'auto';
-
-        const toLine = document.createElement('div');
-        toLine.style.fontWeight = '700';
-        toLine.style.fontFamily = 'ui-monospace,SFMono-Regular,Monaco,Consolas,"Liberation Mono", monospace';
-        toLine.textContent = 'To: ' + (draft.recipient || '');
-        card.appendChild(toLine);
-
-        const subjectLine = document.createElement('div');
-        subjectLine.style.fontSize = '12px';
-        subjectLine.style.color = 'var(--muted)';
-        subjectLine.style.marginTop = '4px';
-        subjectLine.textContent = 'Subject: ' + (draft.subject || '');
-        card.appendChild(subjectLine);
-
-        if (draft.case_id != null && draft.case_id !== '') {
-          const caseLine = document.createElement('div');
-          caseLine.style.fontSize = '12px';
-          caseLine.style.color = 'var(--muted)';
-          caseLine.style.marginTop = '4px';
-          caseLine.textContent = 'Case: ' + draft.case_id;
-          card.appendChild(caseLine);
-        }
-
-        const bodySnippet = (draft.body ?? '').replace(/\s+/g, ' ').trim();
-        const snippet = document.createElement('div');
-        snippet.style.fontFamily = 'ui-monospace,SFMono-Regular,Monaco,Consolas,"Liberation Mono", monospace';
-        snippet.style.fontSize = '12px';
-        snippet.style.color = '#d1d5db';
-        snippet.style.marginTop = '6px';
-        snippet.style.whiteSpace = 'pre-wrap';
-        snippet.textContent = (bodySnippet.length > 200) ? bodySnippet.slice(0, 200) + '...' : bodySnippet;
-        card.appendChild(snippet);
-
-        const actions = document.createElement('div');
-        actions.style.display = 'flex';
-        actions.style.justifyContent = 'flex-end';
-        actions.style.marginTop = '8px';
-        const sendBtn = document.createElement('button');
-        sendBtn.textContent = 'Send';
-        sendBtn.className = 'btn btn-secondary';
-        sendBtn.style.alignSelf = 'flex-end';
-        sendBtn.addEventListener('click', async () => {
-          sendBtn.disabled = true;
-          try {
-            const resp = await fetch('/outbox/' + encodeURIComponent(draft.id) + '/send', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({})
-            });
-            if (!resp.ok) throw new Error('HTTP ' + resp.status);
-            const result = await resp.json();
-            // Optional: show a quick note
-            if (result && result.status) {
-              const note = document.createElement('div');
-              note.style.color = '#9ae6b4';
-              note.style.fontSize = '12px';
-              note.style.marginTop = '6px';
-              note.textContent = 'Sent: ' + (result.status || '');
-              card.appendChild(note);
-            }
-            await loadVendorChasers(); // refresh
-          } catch (err) {
-            showError('Failed to send draft: ' + err.message);
-          } finally {
-            sendBtn.disabled = false;
-          }
-        });
-        actions.appendChild(sendBtn);
-        card.appendChild(actions);
-
-        listEl.appendChild(card);
-      });
-    }
-
-    // Data loading
-    async function fetchJson(url, options = {}) {
-      try {
-        const res = await fetch(url, options);
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        clearError();
-        return data;
-      } catch (err) {
-        showError('Failed to load ' + url + ': ' + err.message);
-        return null;
-      }
-    }
-
-    async function loadAgentLast() {
-      const data = await fetchJson('/agent/last');
-      renderActivity(data);
-    }
-
-    async function loadQuestions() {
-      const data = await fetchJson('/agent/questions');
-      if (data && Array.isArray(data.questions)) renderQuestions(data.questions);
-      else renderQuestions([]);
-    }
-
-    async function loadCases() {
-      const data = await fetchJson('/cases');
-      if (data && Array.isArray(data.cases)) renderCases(data.cases);
-      else renderCases([]);
-    }
-
-    async function loadCloseReadiness() {
-      const data = await fetchJson('/close-readiness');
-      if (data) {
-        // Could update a hidden metric if needed
-      }
-    }
-
-    async function loadMetrics() {
-      const data = await fetchJson('/metrics');
-      renderMetrics(data);
-    }
-
-    async function loadGST() {
-      const data = await fetchJson('/gst/reconcile');
-      renderGST(data);
-    }
-
-    async function loadCloseStatus() {
-      const data = await fetchJson('/close/status');
-      renderMonthClose(data);
-    }
-
-    async function loadRules() {
-      const data = await fetchJson('/rules');
-      renderRules(data && data.rules ? data.rules : []);
-    }
-
-    async function loadAuditVerify() {
-      const data = await fetchJson('/audit/verify');
-      // Not explicitly rendered elsewhere; could flash an indicator if needed
-    }
-
-    async function loadVendorChasers() {
-      const data = await fetchJson('/outbox');
-      renderVendorChasers(data);
-    }
-
-    async function loadAll() {
-      // Fire all reads
-      await Promise.all([
-        loadAgentLast(),
-        loadQuestions(),
-        loadCases(),
-        loadCloseReadiness(),
-        loadMetrics(),
-        loadGST(),
-        loadCloseStatus(),
-        loadRules(),
-        loadAuditVerify(),
-        loadVendorChasers(),
-      ]);
-    }
-
-    // Run agent
-    async function runAgent() {
-      const btn = document.getElementById('runBtn');
-      btn.disabled = true;
-      const original = btn.textContent;
-      btn.textContent = 'Agent working...';
-      // Optional spinner
-      const spinner = document.createElement('span');
-      spinner.className = 'spinner';
-      btn.appendChild(spinner);
-
-      // Send a minimal payload; adjust as needed by your backend
-      let payload = {
-        goal: 'month-end close',
-        completed: false,
-        summary: ''
-      };
-      try {
-        const res = await fetch('/agent/run', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        // Remove spinner
-        btn.removeChild(spinner);
-        btn.textContent = original;
-        if (!res.ok) throw new Error('Run failed: HTTP ' + res.status);
-        const data = await res.json();
-        // After a run, refresh data
-        await loadAll();
-      } catch (err) {
-        // Restore button
-        btn.removeChild(spinner);
-        btn.textContent = original;
-        btn.disabled = false;
-        showError('Run failed: ' + err.message);
-        return;
-      }
-      btn.disabled = false;
-    }
-
-    // Wire up tabs
-    function setupTabs() {
-      const tabs = document.querySelectorAll('.tab');
-      tabs.forEach(tab => tab.addEventListener('click', (e) => {
-        const target = e.currentTarget.getAttribute('data-target');
-        // activate
-        tabs.forEach(t => t.classList.remove('active'));
-        e.currentTarget.classList.add('active');
-        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-        document.getElementById(target).classList.add('active');
-      }));
-    }
-
-    // Init
-    document.addEventListener('DOMContentLoaded', () => {
-      // Bind buttons
-      document.getElementById('runBtn').addEventListener('click', runAgent);
-      document.getElementById('refreshBtn').addEventListener('click', loadAll);
-      document.getElementById('vendor-send-all').addEventListener('click', async () => {
-        const btn = document.getElementById('vendor-send-all');
-        btn.disabled = true;
-        try {
-          const res = await fetch('/outbox/send-all', { method: 'POST' });
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          const data = await res.json();
-          // Refresh vendor chasers
-          await loadVendorChasers();
-        } catch (err) {
-          showError('Failed to send all vendor drafts: ' + err.message);
-        } finally {
-          btn.disabled = false;
-        }
-      });
-
-      setupTabs();
-      // Initial load
-      loadAll();
-    });
-  </script>
+  <div id="banner" class="banner"></div>
+
+  <section>
+    <div class="figures" id="figures"></div>
+  </section>
+
+  <section>
+    <h2>What the agent did</h2>
+    <p class="sub">Each step is the agent choosing a tool, seeing the result, and deciding what to do next.</p>
+    <div id="agentmeta" class="run-meta"></div>
+    <div id="summary"></div>
+    <ol class="steps" id="steps"></ol>
+    <div id="stepsEmpty" class="empty">No run yet. Press “Run the close” and the agent will work through the period.</div>
+  </section>
+
+  <section id="qsec">
+    <h2>Waiting on you</h2>
+    <p class="sub">The agent stopped short of deciding these. Approving one teaches it to handle that pattern itself next time.</p>
+    <div id="questions"></div>
+  </section>
+
+  <section>
+    <h2>Exceptions</h2>
+    <div class="bars" id="bars"></div>
+    <div class="scroll" style="margin-top:24px">
+      <table id="casesTable">
+        <thead><tr>
+          <th>Case</th><th>Status</th><th class="r">Confidence</th><th>Method</th>
+          <th>Exception</th><th class="r">Δ Amount</th><th class="r">Action</th>
+        </tr></thead>
+        <tbody id="cases"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>GST · input tax credit</h2></div>
+    <p class="sub">Purchase register against what suppliers actually filed in GSTR-2B.</p>
+    <div class="figures" id="gstFigures"></div>
+    <div class="scroll" style="margin-top:20px">
+      <table>
+        <thead><tr><th>Invoice</th><th>Supplier GSTIN</th><th>Finding</th>
+          <th class="r">Δ Taxable</th><th class="r">Δ Tax</th></tr></thead>
+        <tbody id="gstRows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <div>
+        <h2>Vendor chasers</h2>
+        <p class="sub" style="margin-bottom:0">Drafted by the agent for invoices no supplier filed. Nothing is sent until you send it.</p>
+      </div>
+      <button id="sendAll" class="btn-quiet">Send all</button>
+    </div>
+    <div id="outboxStats" class="run-meta" style="margin-top:16px"></div>
+    <div id="drafts"></div>
+  </section>
+
+  <section>
+    <h2>Month close</h2>
+    <p class="sub">Every order tied from operations through the invoice ledger to the bank.</p>
+    <div class="figures" id="closeFigures"></div>
+    <div class="scroll" style="margin-top:20px">
+      <table>
+        <thead><tr><th>Order</th><th>Status</th><th class="r">Ops net</th>
+          <th class="r">Invoiced</th><th class="r">Settled</th><th class="r">Variance</th></tr></thead>
+        <tbody id="closeRows"></tbody>
+      </table>
+    </div>
+    <div id="unexplained" class="sub" style="margin-top:16px"></div>
+  </section>
+
+  <section style="border-bottom:0">
+    <h2>What the agent has learned</h2>
+    <p class="sub">Rules come from your decisions. Each is capped near the amount it was learned on, stays provisional until it has proved itself, and is revoked the moment you reject something it resolved.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Pattern</th><th>Then</th><th>Standing</th>
+          <th class="r">Applied</th><th class="r">Valid up to</th><th>From</th></tr></thead>
+        <tbody id="rules"></tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const money = n => (Number(n)||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+const pct = n => ((Number(n)||0)*100).toFixed(1) + '%';
+
+function fail(msg){ const b=$('banner'); b.textContent = msg; b.classList.add('on'); }
+function clearFail(){ $('banner').classList.remove('on'); }
+
+async function get(url){
+  const r = await fetch(url);
+  if(!r.ok) throw new Error(url + ' returned ' + r.status);
+  return r.json();
+}
+async function post(url, body){
+  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+                              body: body ? JSON.stringify(body) : '{}'});
+  if(!r.ok && r.status !== 400 && r.status !== 404) throw new Error(url + ' returned ' + r.status);
+  return r.json();
+}
+
+function figures(el, items){
+  el.innerHTML = items.map(f =>
+    `<div class="fig"><div class="k">${esc(f.k)}</div><div class="v num ${f.tone||''}">${f.v}</div></div>`
+  ).join('');
+}
+
+/* ---------- agent ---------- */
+function isRefused(step){
+  const o = step.observation;
+  if(o && typeof o === 'object' && o.refused) return true;
+  const t = (JSON.stringify(o||'') + ' ' + (step.error||'')).toLowerCase();
+  return t.includes('policy blocks') || t.includes('refused');
+}
+
+function renderAgent(a){
+  if(!a || !a.step_count){ $('steps').innerHTML=''; $('summary').innerHTML='';
+    $('agentmeta').innerHTML=''; $('stepsEmpty').style.display='block'; return; }
+  $('stepsEmpty').style.display='none';
+
+  const stopped = a.stopped_reason==='done'||a.stopped_reason==='completed' ? 'finished'
+                : a.stopped_reason==='max_steps' ? 'stopped at its step limit'
+                : a.stopped_reason==='router_error' ? 'could not reach a model'
+                : esc(a.stopped_reason||'');
+  $('agentmeta').innerHTML =
+    `<span><b>${a.step_count}</b> steps</span><span><b>${a.tool_calls}</b> tool calls</span>` +
+    `<span>${esc(stopped)}</span>`;
+
+  $('summary').innerHTML = a.summary ? `<div class="summary">${esc(a.summary)}</div>` : '';
+
+  $('steps').innerHTML = (a.steps||[]).map(s => {
+    const ref = isRefused(s);
+    const tool = s.tool ? `<span class="tool">${esc(s.tool)}</span>` : '<span class="dim" style="font-size:13px">concluded</span>';
+    let obs = '';
+    if(s.error) obs = `<div class="obs err">${esc(s.error)}</div>`;
+    else if(s.observation) obs = `<div class="obs">${esc(JSON.stringify(s.observation))}</div>`;
+    return `<li class="${ref?'refused':''}">
+      <div class="thought">${esc(s.thought||'')}</div>
+      <div>${tool}${ref?'<span class="refused-tag">Refused by policy</span>':''}</div>
+      ${obs}</li>`;
+  }).join('');
+}
+
+function renderQuestions(qs, cases){
+  const open = (cases||[]).filter(c => c.status === 'needs_review' && !c.exception_type && c.pattern);
+  const items = [];
+  (qs||[]).forEach(q => items.push({case_id:q.case_id, text:q.question}));
+  open.forEach(c => { if(!items.some(i=>i.case_id===c.case_id))
+    items.push({case_id:c.case_id, text:`Should ${esc(c.pattern)} at ${pct(c.confidence)} confidence be treated as a match?`}); });
+
+  $('qsec').style.display = items.length ? '' : 'none';
+  $('questions').innerHTML = items.map(q => `
+    <div class="q">
+      <div class="qm">${esc(q.case_id)}</div>
+      <div class="qt">${q.text}</div>
+      <button class="btn-mini" data-approve="${esc(q.case_id)}">Approve and remember</button>
+      <span class="learned" id="learn-${esc(q.case_id)}"></span>
+    </div>`).join('');
+}
+
+/* ---------- panels ---------- */
+function renderCases(cases, exceptions){
+  const max = Math.max(1, ...Object.values(exceptions||{}).map(Number));
+  $('bars').innerHTML = Object.keys(exceptions||{}).length
+    ? Object.entries(exceptions).map(([k,v]) =>
+      `<div class="bar"><span>${esc(k.replace(/_/g,' '))}</span>
+        <span class="track"><span class="fill" style="width:${(v/max)*100}%"></span></span>
+        <span class="n num">${v}</span></div>`).join('')
+    : '<div class="empty">Nothing outstanding.</div>';
+
+  $('cases').innerHTML = (cases||[]).length ? cases.map(c => {
+    const cls = c.status==='auto_resolved' ? 'ok' : 'warn';
+    const label = c.status==='auto_resolved' ? 'resolved' : 'needs review';
+    const learned = c.learned_rule_applied ? '<span class="tag">from memory</span>' : '';
+    const act = c.status==='needs_review'
+      ? `<button class="btn-mini" data-approve="${esc(c.case_id)}">Approve</button>` : '';
+    return `<tr>
+      <td class="mono">${esc(c.case_id)}</td>
+      <td><span class="pill ${cls}">${label}</span>${learned}</td>
+      <td class="r num">${pct(c.confidence)}</td>
+      <td class="dim">${esc((c.method||'').replace(/_/g,' '))}</td>
+      <td>${c.exception_type?`<span class="pill bad">${esc(c.exception_type.replace(/_/g,' '))}</span>`:'<span class="dim">—</span>'}</td>
+      <td class="r num">${money(c.amount_delta)}</td>
+      <td class="r">${act}</td></tr>`;
+  }).join('') : '<tr><td colspan="7" class="empty">No cases yet.</td></tr>';
+}
+
+function renderGst(g){
+  figures($('gstFigures'), [
+    {k:'Input tax credit at risk', v:'₹'+money(g.itc_at_risk), tone: (g.itc_at_risk>0?'bad':'ok')},
+    {k:'Invoices matched', v:g.matched ?? 0, tone:'ok'},
+    {k:'Findings', v:(g.exceptions||[]).length, tone:(g.exceptions||[]).length?'warn':'ok'}
+  ]);
+  const label = {missing_in_gstr2b:'Supplier has not filed',
+                 value_mismatch:'Value differs',
+                 missing_in_purchase_register:'Not in our register'};
+  $('gstRows').innerHTML = (g.exceptions||[]).length ? g.exceptions.map(e=>`<tr>
+      <td class="mono">${esc(e.invoice_number||'—')}</td>
+      <td class="mono dim">${esc(e.supplier_gstin||'—')}</td>
+      <td>${esc(label[e.exception_type]||(e.exception_type||'').replace(/_/g,' '))}</td>
+      <td class="r num">${money(e.taxable_delta)}</td>
+      <td class="r num">${money(e.tax_delta)}</td></tr>`).join('')
+    : '<tr><td colspan="5" class="empty">Everything filed and matched.</td></tr>';
+}
+
+function renderClose(k){
+  const s = k.summary||{};
+  figures($('closeFigures'), [
+    {k:'Close readiness', v:pct(k.readiness), tone:(k.readiness>=0.9?'ok':k.readiness>=0.5?'warn':'bad')},
+    {k:'Closed', v:s.closed??0, tone:'ok'},
+    {k:'Partial', v:s.partial??0, tone:'warn'},
+    {k:'Orphan', v:s.orphan??0, tone:(s.orphan?'bad':'')}
+  ]);
+  $('closeRows').innerHTML = (k.rows||[]).length ? k.rows.map(r=>{
+    const cls = r.status==='closed'?'ok':r.status==='partial'?'warn':'bad';
+    return `<tr><td class="mono">${esc(r.order_ref)}</td>
+      <td><span class="pill ${cls}">${esc(r.status)}</span></td>
+      <td class="r num">${money(r.ops_net)}</td>
+      <td class="r num">${money(r.erp_amount)}</td>
+      <td class="r num">${money(r.bank_amount)}</td>
+      <td class="r num" ${Math.abs(Number(r.variance))>0.01?'style="color:var(--oxblood)"':''}>${money(r.variance)}</td></tr>`;
+  }).join('') : '<tr><td colspan="6" class="empty">No orders.</td></tr>';
+  const u = k.unexplained_bank||[];
+  $('unexplained').innerHTML = u.length
+    ? `Bank credits nothing explains: <span class="mono">${u.map(esc).join(', ')}</span>`
+    : 'Every bank credit is accounted for.';
+}
+
+function renderOutbox(o){
+  const st = o.stats||{};
+  $('outboxStats').innerHTML =
+    `<span><b>${st.pending??0}</b> waiting</span><span><b>${st.sent??0}</b> sent</span>` +
+    (st.failed ? `<span style="color:var(--oxblood)"><b>${st.failed}</b> failed</span>` : '');
+  const p = o.pending||[];
+  $('drafts').innerHTML = p.length ? p.map(d=>`
+    <div class="draft">
+      <div class="to">${esc(d.recipient)}</div>
+      <div class="sj">${esc(d.subject)}</div>
+      <div class="bd">${esc((d.body||'').slice(0,200))}${(d.body||'').length>200?'…':''}</div>
+      <div class="row">
+        <span class="dim" style="font-size:12px">${d.case_id?'Case '+esc(d.case_id):''}</span>
+        <button class="btn-mini" data-send="${d.id}">Send</button>
+      </div>
+    </div>`).join('')
+    : '<div class="empty">No chasers drafted. The agent writes these after it checks GST.</div>';
+}
+
+function renderRules(rs){
+  $('rules').innerHTML = (rs||[]).length ? rs.map(r=>{
+    const live = r.enabled !== false;
+    const standing = !live ? '<span class="pill bad">revoked</span>'
+      : r.status==='promoted' ? '<span class="pill ok">trusted</span>'
+      : '<span class="pill warn">provisional</span>';
+    const cap = Number(r.max_amount)>0 ? '₹'+money(r.max_amount) : 'any amount';
+    return `<tr>
+      <td class="mono">${esc(r.pattern)}</td>
+      <td>${esc((r.action||'').replace(/_/g,' '))}</td>
+      <td>${standing}${r.revoked_reason?`<div class="dim" style="font-size:12px;margin-top:4px">${esc(r.revoked_reason)}</div>`:''}</td>
+      <td class="r num">${r.applied_count ?? r.hit_count ?? 0}</td>
+      <td class="r num">${cap}</td>
+      <td class="mono dim">${esc(r.created_from_case||'—')}</td></tr>`;
+  }).join('') : '<tr><td colspan="6" class="empty">Nothing learned yet. Approve a case and it will remember.</td></tr>';
+}
+
+/* ---------- load ---------- */
+async function loadAll(){
+  clearFail();
+  try{
+    const [cr, mx, cs, gst, cl, ru, ob, ag] = await Promise.all([
+      get('/close-readiness'), get('/metrics'), get('/cases'), get('/gst/reconcile'),
+      get('/close/status'), get('/rules'), get('/outbox'), get('/agent/last')
+    ]);
+    figures($('figures'), [
+      {k:'Close readiness', v:pct(cr.readiness), tone:(cr.readiness>=0.9?'ok':cr.readiness>=0.5?'warn':'bad')},
+      {k:'Cases', v:cr.total_cases ?? 0},
+      {k:'Resolved', v:cr.auto_resolved ?? 0, tone:'ok'},
+      {k:'Needs review', v:cr.needs_review ?? 0, tone:(cr.needs_review?'warn':'ok')},
+      {k:'Audit chain', v: mx.audit_ok ? 'Intact' : 'Broken', tone: mx.audit_ok?'ok':'bad'}
+    ]);
+    $('runmeta').textContent = mx.run_id ? 'Run ' + mx.run_id : '';
+    renderCases(cs.cases, cr.exceptions || mx.exceptions);
+    renderQuestions(ag.questions, cs.cases);
+    renderGst(gst); renderClose(cl); renderRules(ru.rules); renderOutbox(ob); renderAgent(ag);
+  }catch(e){ fail(e.message + ' — is the server running?'); }
+}
+
+/* ---------- actions ---------- */
+/* Each button asks the AGENT to pursue a goal — it still chooses its own tools. */
+const GOALS = {
+  full: {steps:8, label:'Run the whole close', goal:
+    'You own the month-end close. Run the reconciliation, check GST against GSTR-2B, and check the ' +
+    'three-way month close. Review every open case: consult the learned rules and the policy, resolve ' +
+    'what is safe to resolve, ask the human when you are genuinely unsure, and escalate anything that ' +
+    'needs a person.'},
+  cash: {steps:6, label:'Match card to bank', goal:
+    'Run the reconciliation of the corporate card feed against the bank feed, then review the open ' +
+    'cases: check the learned rules and the policy, resolve what is safe, and escalate or ask about ' +
+    'anything you cannot decide. Do not run the GST or month-close checks.'},
+  gst: {steps:5, label:'Check GST', goal:
+    'Check the purchase register against GSTR-2B. Report what is matched and how much input tax ' +
+    'credit is at risk, then draft chaser emails for every invoice the supplier has not filed. Do not ' +
+    'run the cash reconciliation or the month-close check.'},
+  close: {steps:5, label:'Tie out the month', goal:
+    'Check the three-way month close: every order from operations through the invoice ledger to the ' +
+    'bank. Report what is closed, what is partial, what is orphaned, and any bank credit nothing ' +
+    'explains. Do not run the cash reconciliation or the GST check.'}
+};
+
+async function runAgent(btn, key){
+  const cfg = GOALS[key] || GOALS.full;
+  const buttons = document.querySelectorAll('#run,.task');
+  buttons.forEach(b => b.disabled = true);
+  const original = btn.textContent;
+  btn.innerHTML = '<span class="spinner"></span>Working…';
+  clearFail();
+  try{
+    const a = await post('/agent/run', {max_steps: cfg.steps, goal: cfg.goal});
+    renderAgent(a);
+    if(!a.completed && a.summary) fail(a.summary);
+    await loadAll();
+    document.getElementById('steps').scrollIntoView({behavior:'smooth', block:'start'});
+  }catch(e){ fail(e.message); }
+  finally{ buttons.forEach(b => b.disabled = false); btn.textContent = original; }
+}
+
+$('run').addEventListener('click', ev => runAgent(ev.currentTarget, 'full'));
+document.querySelectorAll('.task').forEach(b =>
+  b.addEventListener('click', ev => runAgent(ev.currentTarget, ev.currentTarget.dataset.goal)));
+
+$('refresh').addEventListener('click', loadAll);
+
+$('reset').addEventListener('click', async () => {
+  try{ await post('/admin/reset'); await loadAll(); }catch(e){ fail(e.message); }
+});
+
+$('sendAll').addEventListener('click', async () => {
+  try{ await post('/outbox/send-all'); renderOutbox(await get('/outbox')); }
+  catch(e){ fail(e.message); }
+});
+
+document.addEventListener('click', async ev => {
+  const ap = ev.target.closest('[data-approve]');
+  if(ap){
+    const id = ap.getAttribute('data-approve');
+    ap.disabled = true; ap.textContent = 'Saving…';
+    try{
+      const r = await post('/cases/' + encodeURIComponent(id) + '/decision',
+                           {action:'approve', actor_id:'finance_user_01'});
+      const note = $('learn-' + id);
+      if(note && r.learned_rule_id) note.textContent = 'Learned — it will handle this pattern itself next time.';
+      await loadAll();
+    }catch(e){ fail(e.message); ap.disabled = false; ap.textContent = 'Approve'; }
+  }
+  const sd = ev.target.closest('[data-send]');
+  if(sd){
+    const id = sd.getAttribute('data-send');
+    sd.disabled = true; sd.textContent = 'Sending…';
+    try{ await post('/outbox/' + id + '/send'); renderOutbox(await get('/outbox')); }
+    catch(e){ fail(e.message); sd.disabled = false; sd.textContent = 'Send'; }
+  }
+});
+
+document.addEventListener('DOMContentLoaded', loadAll);
+</script>
 </body>
 </html>

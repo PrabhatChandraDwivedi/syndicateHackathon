@@ -88,10 +88,13 @@ def _get_run_rules_path() -> Optional[str]:
 
 
 def get_run() -> dict:
-    if STATE['run'] is None:
-        rules_path = _get_run_rules_path()
-        STATE['run'] = _safe_run_pipeline(rules_path=rules_path)
-    return STATE['run']
+    """Return the current run, or an empty result when nothing has run yet.
+
+    This deliberately does NOT run the pipeline lazily. Work happens because the
+    agent decided to do it (or because POST /run was called explicitly), so a
+    read never manufactures a run behind the caller's back.
+    """
+    return STATE['run'] or {}
 
 
 class DecisionInput(BaseModel):
@@ -247,8 +250,20 @@ def _agent_run_sequence():
 
 
 # NEW ENDPOINTS: GST and Month-Close workflows
+EMPTY_GST = {'matched': 0, 'itc_at_risk': 0.0,
+             'counts': {'purchase': 0, 'gstr2b': 0}, 'exceptions': [], 'ran': False}
+EMPTY_CLOSE = {'summary': {'closed': 0, 'partial': 0, 'orphan': 0, 'total': 0},
+               'readiness': 0.0, 'unexplained_bank': [], 'rows': [], 'ran': False}
+
+
 @app.get("/gst/reconcile")
 async def gst_reconcile_endpoint():
+    """Report the last GST check. Reading never triggers one -- the agent does."""
+    return STATE.get('gst') or dict(EMPTY_GST)
+
+
+def _do_gst_impl():
+    """Perform the GST check. Called by the agent's reconcile_gst tool."""
     try:
         # Ensure seed CSVs exist and load them
         paths = generate(DATA_DIR)
@@ -285,18 +300,27 @@ async def gst_reconcile_endpoint():
             ex_dict['supplier_gstin'] = supplier_gstin
             exs_out.append(ex_dict)
 
-        return {
+        out = {
             'matched': matched,
             'itc_at_risk': itc_at_risk,
             'counts': counts,
-            'exceptions': exs_out
+            'exceptions': exs_out,
+            'ran': True,
         }
+        STATE['gst'] = out
+        return out
     except Exception as e:
-        return {'error': str(e), 'matched': 0, 'itc_at_risk': 0.0, 'counts': {'purchase': 0, 'gstr2b': 0}, 'exceptions': []}
+        return {'error': str(e), 'matched': 0, 'itc_at_risk': 0.0, 'counts': {'purchase': 0, 'gstr2b': 0}, 'exceptions': [], 'ran': True}
 
 
 @app.get("/close/status")
 async def close_status_endpoint():
+    """Report the last month-close check. Reading never triggers one."""
+    return STATE.get('close') or dict(EMPTY_CLOSE)
+
+
+def _do_close_impl():
+    """Perform the three-way close. Called by the agent's check_month_close tool."""
     try:
         # Ensure seed CSVs exist and load them
         paths = generate(DATA_DIR)
@@ -317,14 +341,17 @@ async def close_status_endpoint():
         readiness = result.get('readiness', 0.0)
         unexplained_bank = result.get('unexplained_bank', [])
 
-        return {
+        out = {
             'summary': summary,
             'readiness': readiness,
             'unexplained_bank': unexplained_bank,
-            'rows': rows_out
+            'rows': rows_out,
+            'ran': True,
         }
+        STATE['close'] = out
+        return out
     except Exception as e:
-        return {'error': str(e), 'summary': {'closed': 0, 'partial': 0, 'orphan': 0, 'total': 0}, 'readiness': 0.0, 'unexplained_bank': [], 'rows': []}
+        return {'error': str(e), 'summary': {'closed': 0, 'partial': 0, 'orphan': 0, 'total': 0}, 'readiness': 0.0, 'unexplained_bank': [], 'rows': [], 'ran': True}
 
 
 # REST ENDPOINTS
