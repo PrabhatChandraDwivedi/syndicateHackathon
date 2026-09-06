@@ -164,6 +164,26 @@ tbody tr:hover{background:#FAFBFC}
   border-left:2px solid var(--rule-soft);padding-left:12px}
 .draft .row{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-top:11px}
 
+/* ---------- detail modal ---------- */
+tbody tr[data-detail]{cursor:pointer}
+.veil{position:fixed;inset:0;background:rgba(18,25,34,.45);display:none;
+  align-items:flex-start;justify-content:center;padding:6vh 20px;z-index:50}
+.veil.on{display:flex}
+.modal{background:var(--card);max-width:640px;width:100%;border-radius:4px;
+  border-top:4px solid var(--accent);box-shadow:0 18px 50px rgba(18,25,34,.28);
+  max-height:82vh;overflow:auto}
+.modal header{padding:20px 24px 14px;border-bottom:1px solid var(--rule);
+  display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+.modal h3{margin:0;font-family:var(--serif);font-size:21px;font-weight:400}
+.modal .why{font-family:var(--serif);font-size:15.5px;line-height:1.6;color:var(--ink-2);
+  padding:18px 24px 6px;max-width:66ch}
+.modal dl{margin:0;padding:8px 24px 22px;display:grid;grid-template-columns:150px 1fr;gap:9px 16px;font-size:14px}
+.modal dt{color:var(--muted);font-size:13px}
+.modal dd{margin:0;font-variant-numeric:tabular-nums;word-break:break-word}
+.x{background:transparent;border:0;font-size:22px;line-height:1;color:var(--muted);cursor:pointer;padding:0 2px}
+.x:hover{color:var(--ink)}
+.hint{font-size:13px;color:var(--muted);margin-top:6px}
+
 @media (max-width:640px){
   .masthead h1{font-size:27px}
   .bar{grid-template-columns:110px 1fr 36px}
@@ -287,6 +307,14 @@ tbody tr:hover{background:#FAFBFC}
 
 </div>
 
+<div class="veil" id="veil">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <header><h3 id="mTitle"></h3><button class="x" id="mClose" aria-label="Close">&times;</button></header>
+    <div class="why" id="mWhy"></div>
+    <dl id="mBody"></dl>
+  </div>
+</div>
+
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -368,6 +396,37 @@ function renderQuestions(qs, cases){
 }
 
 /* ---------- panels ---------- */
+/* ---------- why a case was flagged ---------- */
+const WHY = {
+  duplicate_transaction: 'Same amount, same date and same merchant as an earlier line, so this looks like the same charge counted twice. Duplicates always go to a person — a learned rule can never resolve one.',
+  split_payment: 'One bank credit equals the sum of several card lines, found by subset-sum. That is a heuristic — more than one combination can add up to the same total — so a person confirms it before it is treated as settled.',
+  amount_mismatch: 'The amounts differ by more than the tolerance in policy, so this is not a clean match.',
+  date_out_of_tolerance: 'The settlement fell outside the allowed window of days after the transaction.',
+  ambiguous_match: 'More than one candidate scored close together, so there is no clear winner.',
+  unmatched_source: 'Nothing on the bank side corresponds to this line.',
+  unmatched_target: 'A bank line nothing on the card side explains.',
+  merchant_unresolved: 'The merchant could not be resolved from the descriptor.'
+};
+const DETAILS = {};
+
+function openDetail(key){
+  const d = DETAILS[key]; if(!d) return;
+  $('mTitle').textContent = d.title;
+  $('mWhy').textContent = d.why || '';
+  $('mBody').innerHTML = d.rows.map(([k,v]) =>
+    `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('');
+  $('veil').classList.add('on');
+  $('mClose').focus();
+}
+function closeDetail(){ $('veil').classList.remove('on'); }
+$('mClose').addEventListener('click', closeDetail);
+$('veil').addEventListener('click', e => { if(e.target === $('veil')) closeDetail(); });
+document.addEventListener('keydown', e => { if(e.key === 'Escape') closeDetail(); });
+document.addEventListener('dblclick', e => {
+  const tr = e.target.closest('tr[data-detail]');
+  if(tr) openDetail(tr.getAttribute('data-detail'));
+});
+
 function renderCases(cases, exceptions){
   const max = Math.max(1, ...Object.values(exceptions||{}).map(Number));
   $('bars').innerHTML = Object.keys(exceptions||{}).length
@@ -383,7 +442,31 @@ function renderCases(cases, exceptions){
     const learned = c.learned_rule_applied ? '<span class="tag">from memory</span>' : '';
     const act = c.status==='needs_review'
       ? `<button class="btn-mini" data-approve="${esc(c.case_id)}">Approve</button>` : '';
-    return `<tr>
+    let reasons = [];
+    try{ reasons = JSON.parse(c.reasons || '[]'); }catch(_){ reasons = []; }
+    DETAILS['case:'+c.case_id] = {
+      title: 'Case ' + c.case_id,
+      why: c.exception_type ? (WHY[c.exception_type] || 'Flagged by the exception taxonomy.')
+           : (c.status==='auto_resolved'
+              ? 'No exception was raised and confidence cleared the policy threshold, so the agent resolved it.'
+              : 'No exception, but confidence sat below the auto-resolve threshold, so a person decides.'),
+      rows: [
+        ['Status', esc(c.status)],
+        ['Confidence', pct(c.confidence)],
+        ['Method', esc((c.method||'').replace(/_/g,' '))],
+        ['Exception', c.exception_type ? esc(c.exception_type.replace(/_/g,' ')) : 'none'],
+        ['Amount difference', money(c.amount_delta)],
+        ['Matched on', esc(c.pattern || '—')],
+        ['Card lines', `<span class="mono">${esc(c.source_ids||'[]')}</span>`],
+        ['Bank lines', `<span class="mono">${esc(c.candidate_target_ids||'[]')}</span>`],
+        ['Why it scored that way', reasons.length ? reasons.map(esc).join('<br>') : '—'],
+        ['Decision', esc(c.decision_reason || '—')],
+        ['From memory', c.learned_rule_applied
+          ? esc(c.learned_rule_applied) + (c.learned_rule_status ? ' (' + esc(c.learned_rule_status) + ')' : '')
+          : 'no']
+      ]
+    };
+    return `<tr data-detail="case:${esc(c.case_id)}">
       <td class="mono">${esc(c.case_id)}</td>
       <td><span class="pill ${cls}">${label}</span>${learned}</td>
       <td class="r num">${pct(c.confidence)}</td>
@@ -580,8 +663,12 @@ document.addEventListener('click', async ev => {
       const r = await post('/cases/' + encodeURIComponent(id) + '/decision',
                            {action:'approve', actor_id:'finance_user_01'});
       const note = $('learn-' + id);
-      if(note && r.learned_rule_id) note.textContent = 'Learned — it will handle this pattern itself next time.';
+      if(note && r.learned_rule_id){
+        note.innerHTML = 'Learned. Press <b>Run the whole close</b> again — it will resolve this pattern itself, ' +
+                         'and the case will be tagged “from memory”.';
+      }
       await loadAll();
+      if(r.learned_rule_id) document.getElementById('rules').scrollIntoView({behavior:'smooth', block:'center'});
     }catch(e){ fail(e.message); ap.disabled = false; ap.textContent = 'Approve'; }
   }
   const sd = ev.target.closest('[data-send]');
