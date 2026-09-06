@@ -146,6 +146,8 @@
       .timeline { gap: 8px; }
       .step { grid-template-columns: 40px 1fr; }
     }
+
+    /* Vendor Chasers panel specific tweaks can live here if needed */
   </style>
 </head>
 <body>
@@ -266,6 +268,30 @@
           </table>
         </div>
       </div>
+    </section>
+
+    <!-- Vendor Chasers Panel: added below GST section -->
+    <section class="panel" id="vendor-panel" aria-label="Vendor chasers" style="margin-top: 16px;">
+      <div style="display:flex; align-items: center; justify-content: space-between;">
+        <div>
+          <h2 style="margin:0 0 6px;">Vendor chasers</h2>
+          <div class="text-muted" style="font-size: 12px; color: var(--muted); margin: 0;">
+            These are email drafts prepared by the agent that have NOT been sent yet.
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; align-items: center;">
+          <span class="badge amber" id="vc-pending" aria-label="Pending drafts" style="font-variant-numeric: tabular-nums;">0</span>
+          <span class="badge green" id="vc-sent" aria-label="Sent drafts" style="font-variant-numeric: tabular-nums;">0</span>
+          <span class="badge red" id="vc-failed" aria-label="Failed sends" style="font-variant-numeric: tabular-nums;">0</span>
+          <button id="vendor-send-all" class="btn btn-secondary" title="Send all vendor drafts" style="white-space: nowrap;">Send all</button>
+        </div>
+      </div>
+
+      <div id="vendor-list" style="display:flex; flex-direction:column; gap:12px; margin-top:12px; max-height: 420px; overflow:auto;">
+        <!-- Vendor cards get injected here -->
+      </div>
+
+      <div id="vendor-empty" class="empty" style="display:none; margin-top:6px;">No vendor chasers pending</div>
     </section>
 
     <section class="panel" id="learned-section" aria-label="Learned rules">
@@ -661,6 +687,124 @@
       });
     }
 
+    // Vendor Chasers rendering
+    function renderVendorChasers(data) {
+      // data expected: { pending: [{id, channel, recipient, subject, body, case_id, status, attempts}], stats: {pending, sent, failed} }
+      const pendingList = Array.isArray(data?.pending) ? data.pending : [];
+      const stats = data?.stats ?? {};
+
+      // Update counts (treat missing as 0)
+      const pCount = Number(stats.pending ?? 0);
+      const sCount = Number(stats.sent ?? 0);
+      const fCount = Number(stats.failed ?? 0);
+
+      const pendingTag = document.getElementById('vc-pending');
+      const sentTag = document.getElementById('vc-sent');
+      const failedTag = document.getElementById('vc-failed');
+      if (pendingTag) pendingTag.textContent = String(pCount);
+      if (sentTag) sentTag.textContent = String(sCount);
+      if (failedTag) failedTag.textContent = String(fCount);
+
+      const listEl = document.getElementById('vendor-list');
+      const emptyEl = document.getElementById('vendor-empty');
+      listEl.innerHTML = '';
+
+      if (!Array.isArray(pendingList) || pendingList.length === 0) {
+        emptyEl.style.display = 'block';
+        // Ensure the list is empty visually
+        if (listEl) listEl.style.display = 'none';
+        return;
+      }
+
+      emptyEl.style.display = 'none';
+      listEl.style.display = 'flex';
+
+      pendingList.forEach(draft => {
+        const card = document.createElement('div');
+        card.className = 'tile';
+        card.style.padding = '12px';
+        card.style.display = 'flex';
+        card.style.flexDirection = 'column';
+        card.style.alignItems = 'stretch';
+        card.style.justifyContent = 'center';
+        card.style.background = '#11172b';
+        card.style.border = '1px solid #2a3240';
+        card.style.borderRadius = '8px';
+        card.style.minHeight = 'auto';
+
+        const toLine = document.createElement('div');
+        toLine.style.fontWeight = '700';
+        toLine.style.fontFamily = 'ui-monospace,SFMono-Regular,Monaco,Consolas,"Liberation Mono", monospace';
+        toLine.textContent = 'To: ' + (draft.recipient || '');
+        card.appendChild(toLine);
+
+        const subjectLine = document.createElement('div');
+        subjectLine.style.fontSize = '12px';
+        subjectLine.style.color = 'var(--muted)';
+        subjectLine.style.marginTop = '4px';
+        subjectLine.textContent = 'Subject: ' + (draft.subject || '');
+        card.appendChild(subjectLine);
+
+        if (draft.case_id != null && draft.case_id !== '') {
+          const caseLine = document.createElement('div');
+          caseLine.style.fontSize = '12px';
+          caseLine.style.color = 'var(--muted)';
+          caseLine.style.marginTop = '4px';
+          caseLine.textContent = 'Case: ' + draft.case_id;
+          card.appendChild(caseLine);
+        }
+
+        const bodySnippet = (draft.body ?? '').replace(/\s+/g, ' ').trim();
+        const snippet = document.createElement('div');
+        snippet.style.fontFamily = 'ui-monospace,SFMono-Regular,Monaco,Consolas,"Liberation Mono", monospace';
+        snippet.style.fontSize = '12px';
+        snippet.style.color = '#d1d5db';
+        snippet.style.marginTop = '6px';
+        snippet.style.whiteSpace = 'pre-wrap';
+        snippet.textContent = (bodySnippet.length > 200) ? bodySnippet.slice(0, 200) + '...' : bodySnippet;
+        card.appendChild(snippet);
+
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.justifyContent = 'flex-end';
+        actions.style.marginTop = '8px';
+        const sendBtn = document.createElement('button');
+        sendBtn.textContent = 'Send';
+        sendBtn.className = 'btn btn-secondary';
+        sendBtn.style.alignSelf = 'flex-end';
+        sendBtn.addEventListener('click', async () => {
+          sendBtn.disabled = true;
+          try {
+            const resp = await fetch('/outbox/' + encodeURIComponent(draft.id) + '/send', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({})
+            });
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const result = await resp.json();
+            // Optional: show a quick note
+            if (result && result.status) {
+              const note = document.createElement('div');
+              note.style.color = '#9ae6b4';
+              note.style.fontSize = '12px';
+              note.style.marginTop = '6px';
+              note.textContent = 'Sent: ' + (result.status || '');
+              card.appendChild(note);
+            }
+            await loadVendorChasers(); // refresh
+          } catch (err) {
+            showError('Failed to send draft: ' + err.message);
+          } finally {
+            sendBtn.disabled = false;
+          }
+        });
+        actions.appendChild(sendBtn);
+        card.appendChild(actions);
+
+        listEl.appendChild(card);
+      });
+    }
+
     // Data loading
     async function fetchJson(url, options = {}) {
       try {
@@ -695,8 +839,7 @@
     async function loadCloseReadiness() {
       const data = await fetchJson('/close-readiness');
       if (data) {
-        // Update readiness tile if available
-        // Not strictly required here; it's compute in metrics
+        // Could update a hidden metric if needed
       }
     }
 
@@ -725,6 +868,11 @@
       // Not explicitly rendered elsewhere; could flash an indicator if needed
     }
 
+    async function loadVendorChasers() {
+      const data = await fetchJson('/outbox');
+      renderVendorChasers(data);
+    }
+
     async function loadAll() {
       // Fire all reads
       await Promise.all([
@@ -737,6 +885,7 @@
         loadCloseStatus(),
         loadRules(),
         loadAuditVerify(),
+        loadVendorChasers(),
       ]);
     }
 
@@ -799,6 +948,21 @@
       // Bind buttons
       document.getElementById('runBtn').addEventListener('click', runAgent);
       document.getElementById('refreshBtn').addEventListener('click', loadAll);
+      document.getElementById('vendor-send-all').addEventListener('click', async () => {
+        const btn = document.getElementById('vendor-send-all');
+        btn.disabled = true;
+        try {
+          const res = await fetch('/outbox/send-all', { method: 'POST' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          // Refresh vendor chasers
+          await loadVendorChasers();
+        } catch (err) {
+          showError('Failed to send all vendor drafts: ' + err.message);
+        } finally {
+          btn.disabled = false;
+        }
+      });
 
       setupTabs();
       // Initial load
