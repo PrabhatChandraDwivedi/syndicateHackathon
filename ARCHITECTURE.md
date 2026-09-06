@@ -91,7 +91,7 @@ flowchart TB
       CHAOS[H7 Chaos injection]
       NOTIF[H8 Notifications]
       OBS[H9 Neatlogs tracing]
-      LLM[H10 TensorMux model router]
+      LLM[H10 Model router]
       AUD[H11 Hash-chained audit + evidence pack]
     end
 
@@ -280,7 +280,7 @@ alerts are **drafted always, sent only after approval**. The demo runs console +
 leaves the machine, with the Slack sink shown as configured-but-gated.
 
 ### H9 — Observability harness → **Neatlogs** (§6)
-### H10 — Model router harness → **TensorMux** (§7)
+### H10 — Model router harness → **OpenAI + TensorMux** (§7)
 ### H11 — Audit & evidence-pack harness (§13)
 
 ---
