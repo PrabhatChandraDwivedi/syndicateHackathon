@@ -9,10 +9,11 @@ class ProviderConfig:
     api_key_env: str
     base_url: Optional[str] = None
     context_limit: int = 32768
+    token_param: str = 'max_tokens'
 
 PROVIDERS = {
-    'openai': ProviderConfig('openai', 'gpt-5-nano', 'OPENAI_API_KEY', None, 400000),
-    'tensormux': ProviderConfig('tensormux', 'glm-4-7-flash', 'TENSORMUX_API_KEY', 'https://api.tensormux.com/v1', 32768),
+    'openai': ProviderConfig('openai', 'gpt-5-nano', 'OPENAI_API_KEY', None, 400000, token_param='max_completion_tokens'),
+    'tensormux': ProviderConfig('tensormux', 'glm-4-7-flash', 'TENSORMUX_API_KEY', 'https://api.tensormux.com/v1', 32768, token_param='max_tokens'),
 }
 
 DEFAULT_ORDER = ['tensormux', 'openai']
@@ -42,15 +43,24 @@ class ModelRouter:
             cfg = PROVIDERS[name]
             client = self._make_client(cfg)
             try:
-                resp = client.chat.completions.create(
-                    model=cfg.model,
-                    messages=[{'role': 'user', 'content': prompt}],
-                    max_tokens=max_tokens
-                )
+                kwargs = {
+                    'model': cfg.model,
+                    'messages': [{'role': 'user', 'content': prompt}]
+                }
+                kwargs[cfg.token_param] = max_tokens
+                resp = client.chat.completions.create(**kwargs)
+                text = None
+                try:
+                    text = resp.choices[0].message.content
+                except (AttributeError, IndexError, TypeError):
+                    text = None
+                if not isinstance(text, str) or text.strip() == '':
+                    errors.append(f'{name}: empty completion')
+                    continue
                 return {
                     'provider': cfg.name,
                     'model': cfg.model,
-                    'text': resp.choices[0].message.content,
+                    'text': text,
                     'attempts': i
                 }
             except Exception as e:

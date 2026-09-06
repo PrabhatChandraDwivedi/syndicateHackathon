@@ -21,6 +21,14 @@ from app.engine.close import three_way_match
 from app.adapters.csv_source import load_csv
 from seed.generate import generate
 
+# Optional: agent components (best-effort)
+try:
+    from app.agent.loop import ReconciliationAgent
+    from app.harness.modelrouter import ModelRouter
+except Exception:
+    ReconciliationAgent = None  # type: ignore
+    ModelRouter = None  # type: ignore
+
 # Data directory used by GST/Close endpoints and the pipeline
 DATA_DIR = os.environ.get('DATA_DIR', './seed/data')
 
@@ -91,25 +99,38 @@ class DecisionInput(BaseModel):
     note: Optional[str] = None
 
 
+class AgentRunRequest(BaseModel):
+    goal: Optional[str] = None
+    max_steps: Optional[int] = None
+
+
 # Internal helpers for agent integration
 
 def _build_agent_registry(run_fn, gst_fn, close_fn):
-    # Try to leverage a real registry if available; otherwise fall back to a lightweight entry
-    try:
-        # Best-effort: import a possible external builder; if unavailable, fall back
-        from agent_registry import build_registry  # type: ignore
-        registry = build_registry(STATE, None, rules=None, run_fn=run_fn, gst_fn=gst_fn, close_fn=close_fn)
-        STATE['agent'] = registry
-        return registry
-    except Exception:
-        # Lightweight fallback registry
-        reg = {
-            'run_fn': run_fn,
-            'gst_fn': gst_fn,
-            'close_fn': close_fn
-        }
-        STATE['agent'] = reg
-        return reg
+    from app.agent.tools_recon import build_registry
+    from app.policy.engine import load_policy
+    policy = load_policy()
+    import inspect
+    sig = inspect.signature(build_registry)
+    if 'outbox' in sig.parameters:
+        return build_registry(
+            STATE,
+            policy,
+            STATE.get('rules'),
+            run_fn=run_fn,
+            gst_fn=gst_fn,
+            close_fn=close_fn,
+            outbox=STATE.get('outbox')
+        )
+    else:
+        return build_registry(
+            STATE,
+            policy,
+            STATE.get('rules'),
+            run_fn=run_fn,
+            gst_fn=gst_fn,
+            close_fn=close_fn,
+        )
 
 
 def _do_run_impl():
@@ -529,7 +550,7 @@ async def admin_reset():
 
 # NEW ENDPOINTS: agent-driven workflow
 @app.post("/agent/run")
-async def agent_run():
+async def agent_run(req: AgentRunRequest = None):
     # Build internal registry for agent (best-effort)
     def run_fn():
         return _do_run_impl()
@@ -540,19 +561,53 @@ async def agent_run():
     def close_fn():
         return _do_close_impl()
 
-    _build_agent_registry(run_fn, gst_fn, close_fn)
+    try:
+        goal = (req.goal if req and req.goal else STATE.get('goal', DEFAULT_GOAL))
+        max_steps = (req.max_steps if req and req.max_steps is not None else 8)
 
-    run_result = run_fn()
-    gst_result = gst_fn()
-    close_result = close_fn()
+        registry = _build_agent_registry(run_fn, gst_fn, close_fn)
 
-    return {
-        'run': run_result,
-        'gst': gst_result,
-        'close': close_result,
-        'questions': STATE.get('questions', []),
-        'tool_history': STATE.get('tool_history', [])
-    }
+        open_cases = [
+            {'case_id': c.get('case_id'), 'pattern': c.get('pattern'),
+             'confidence': c.get('confidence'), 'exception_type': c.get('exception_type')}
+            for c in (STATE.get('run') or {}).get('cases', [])
+            if c.get('status') == 'needs_review'
+        ][:10]
+        try:
+            router = ModelRouter()
+            agent = ReconciliationAgent(registry, router=router, max_steps=max_steps)
+            result = agent.run(goal, context={'open_cases': open_cases})
+        except Exception as e:
+            result = {'goal': goal, 'completed': False, 'summary': f'agent run failed: {e}',
+                      'steps': [], 'step_count': 0, 'tool_calls': 0,
+                      'stopped_reason': 'router_error'}
+        tool_history = []
+        if hasattr(registry, 'history'):
+            try:
+                for tc in registry.history():
+                    tool_history.append({'name': getattr(tc, 'name', None),
+                                         'ok': getattr(tc, 'ok', None),
+                                         'error': getattr(tc, 'error', None)})
+            except Exception:
+                tool_history = []
+        result['tool_history'] = tool_history
+        result['questions'] = STATE.get('questions', [])
+        STATE['agent'] = result
+        return result
+    except Exception as e:
+        agent_result = {
+            'goal': STATE.get('goal', DEFAULT_GOAL),
+            'completed': False,
+            'summary': f'router_error: {str(e)}',
+            'stopped_reason': 'router_error',
+            'steps': [],
+            'step_count': 0,
+            'tool_calls': 0,
+            'tool_history': [],
+            'questions': STATE.get('questions', [])
+        }
+        STATE['agent'] = agent_result
+        return agent_result
 
 
 @app.get("/agent/questions")
@@ -562,7 +617,24 @@ async def agent_questions():
 
 @app.get("/agent/last")
 async def agent_last():
-    return STATE.get('agent_last', {})
-
-
-# NOTE: Keep every other endpoint working exactly as it is now: /health, /run, /cases with filters, /cases/{id}, /cases/{id}/evidence-pack, /close-readiness, /metrics, /rules/{id}/disable, /audit, /audit/verify, /gst/reconcile, /close/status, /agent/run, /agent/last, /agent/questions, /admin/reset.
+    default_agent = {
+        'goal': '',
+        'completed': False,
+        'summary': 'no agent run yet',
+        'steps': [],
+        'step_count': 0,
+        'tool_calls': 0,
+        'stopped_reason': 'no_router',
+        'tool_history': [],
+        'questions': []
+    }
+    agent = STATE.get('agent')
+    if isinstance(agent, dict) and agent:
+        # Ensure full shape
+        for key in default_agent:
+            agent.setdefault(key, default_agent[key])
+        STATE['agent'] = agent
+        return agent
+    else:
+        STATE['agent'] = default_agent
+        return default_agent

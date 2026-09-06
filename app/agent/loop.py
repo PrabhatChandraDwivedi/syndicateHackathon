@@ -36,6 +36,15 @@ def build_system_prompt(registry: ToolRegistry, goal: str) -> str:
 
 
 def parse_action(text: str) -> dict:
+    if not text or not isinstance(text, str):
+        return {
+            'thought': '',
+            'tool': None,
+            'args': {},
+            'done': False,
+            'summary': '',
+            'parse_error': 'unparseable agent response',
+        }
     m = re.search(r'\{.*\}', text, flags=re.S)
     if not m:
         return {
