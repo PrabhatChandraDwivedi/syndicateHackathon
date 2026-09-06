@@ -356,30 +356,45 @@ async def decision(case_id: str, payload: DecisionInput):
     before_state = case.get('status')
     pattern = case.get('pattern')
 
-    # Determine learning action
+    # Initialize controls
     learned_rule_id = None
+    revoked_rule_id = None
     learned_happened = False
 
-    # Safety: if exception_type is in unsafe set, do not learn
+    # Safety: do not learn from unsafe exceptions
     exception_type = case.get('exception_type')
     unsafe_exceptions = {'duplicate_transaction', 'amount_mismatch', 'split_payment'}
 
-    # Only learn for approve/reject and only if there's a non-empty pattern and not unsafe
+    # REVERSAL: If the action is 'reject' and a previously learned rule exists for this case, revoke it
+    if action == 'reject':
+        prev_id = case.get('learned_rule_applied')
+        if prev_id:
+            try:
+                STATE['rules'].revoke(prev_id, reason=f'reversed by human on case {case_id}')
+                revoked_rule_id = prev_id
+            except Exception:
+                revoked_rule_id = None
+
+    # Determine learning action and possibly learn a new rule
     if action in {'approve', 'reject'} and isinstance(pattern, str) and pattern.strip() and exception_type not in unsafe_exceptions:
         learned_action = 'auto_resolve' if action == 'approve' else 'always_review'
-        # Learn and capture the learned rule id if available
         try:
-            learned_rule = STATE['rules'].learn(pattern, learned_action, case_id)
+            learned_rule = STATE['rules'].learn(pattern, learned_action, case_id, amount=case.get('amount'))
             learned_rule_id = getattr(learned_rule, 'id', None)
             if learned_rule_id is None:
                 learned_rule_id = getattr(learned_rule, 'rule_id', None)
             learned_happened = True
-            # Attach learned_rule_applied to the case for visibility
             case['learned_rule_applied'] = learned_rule_id
         except Exception:
-            # If learning fails for any reason, do not crash the API; just don't attach a rule
             learned_rule_id = None
             learned_happened = False
+
+    # Record application for the new learned rule if we learned one
+    if learned_rule_id is not None:
+        try:
+            STATE['rules'].record_application(learned_rule_id)
+        except Exception:
+            pass
 
     # Write HUMAN DECISION AUDIT EVENT
     actor_id = payload.actor_id or 'finance_user_01'
@@ -411,7 +426,7 @@ async def decision(case_id: str, payload: DecisionInput):
         case['status'] = 'needs_review'
     # For 'edit'/'defer' we do not modify status per spec
 
-    return {'case_id': case_id, 'action': action, 'status': 'recorded', 'learned_rule_id': learned_rule_id, 'pattern': pattern}
+    return {'case_id': case_id, 'action': action, 'status': 'recorded', 'learned_rule_id': learned_rule_id, 'pattern': pattern, 'revoked_rule_id': revoked_rule_id}
 
 
 @app.get("/cases/{case_id}/evidence-pack")
@@ -447,8 +462,16 @@ async def close_readiness(period: Optional[str] = Query(None)):
 @app.get("/rules")
 async def get_rules():
     rules = STATE['rules'].all_rules()
-    rules_dicts = [asdict(r) for r in rules]
-    return {'rules': rules_dicts}
+    rules_out = []
+    for r in rules:
+        r_dict = asdict(r)
+        # Expose additional fields if present; otherwise fill with None
+        for key in ('status', 'applied_count', 'max_amount', 'learned_amount', 'revoked_reason'):
+            if key not in r_dict:
+                value = getattr(r, key, None)
+                r_dict[key] = value if value is not None else None
+        rules_out.append(r_dict)
+    return {'rules': rules_out}
 
 
 @app.post("/rules/{rule_id}/disable")
@@ -542,4 +565,4 @@ async def agent_last():
     return STATE.get('agent_last', {})
 
 
-# NOTE: Keep the existing endpoints intact; no changes to their behavior
+# NOTE: Keep every other endpoint working exactly as it is now: /health, /run, /cases with filters, /cases/{id}, /cases/{id}/evidence-pack, /close-readiness, /metrics, /rules/{id}/disable, /audit, /audit/verify, /gst/reconcile, /close/status, /agent/run, /agent/last, /agent/questions, /admin/reset.

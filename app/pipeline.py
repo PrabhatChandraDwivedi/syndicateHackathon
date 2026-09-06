@@ -87,7 +87,6 @@ def _txn_to_row(txn: Any) -> Dict[str, Any]:
         return dict(txn)
     return {}
 
-
 @span('run_pipeline', kind='WORKFLOW')
 def run_pipeline(db_path: str = ':memory:', data_dir: str = './seed/data', policy_path: str | None = None, rules_path: Optional[str] = None, use_llm: bool = True) -> dict:
     init_tracing()
@@ -147,6 +146,7 @@ def run_pipeline(db_path: str = ':memory:', data_dir: str = './seed/data', polic
     needs_review = 0
     exceptions_counts: Dict[str, int] = {}
     learned_rules_applied_count = 0
+    flagged_for_review_count = 0
 
     for i, match in enumerate(matches, start=1):
         case_id = f'case_{i:03d}'
@@ -236,7 +236,9 @@ def run_pipeline(db_path: str = ':memory:', data_dir: str = './seed/data', polic
         # Learned rule and policy decision
         # a. Determine pattern-based rule BEFORE policy decision
         learned_rule_applied = None
+        learned_rule_status: Optional[str] = None
         decision_reason = None
+        flagged_for_review = False
 
         policy_decision = decide(confidence, amount_for_match, exception_type, policy)
         # Determine blocking by policy
@@ -246,20 +248,41 @@ def run_pipeline(db_path: str = ':memory:', data_dir: str = './seed/data', polic
             if isinstance(blocked_types, list) and isinstance(exception_type, str) and exception_type in blocked_types:
                 blocked = True
 
-        # Get candidate rule if any
-        rule = rule_store.match(pattern) if pattern else None
+        # Get candidate rule if any, pass amount for envelope safety
+        rule = rule_store.match(pattern, amount=amount_for_match) if pattern else None
         # Determine status from policy first
         status = 'auto_resolved' if isinstance(policy_decision, dict) and policy_decision.get('action') == 'auto_resolve' else 'needs_review'
 
         if not blocked and rule is not None:
             if rule.action == 'auto_resolve':
                 status = 'auto_resolved'
+                # Apply learned rule
+                try:
+                    updated_rule = rule_store.record_application(rule.rule_id)
+                except Exception:
+                    updated_rule = None
                 learned_rule_applied = rule.rule_id
-                decision_reason = f'learned rule {rule.rule_id} from case {rule.created_from_case}'
+
+                # Determine status for the learned rule after application
+                new_status = None
+                if updated_rule is not None and getattr(updated_rule, 'status', None) is not None:
+                    new_status = getattr(updated_rule, 'status')
+                if new_status is None and getattr(rule, 'status', None) is not None:
+                    new_status = getattr(rule, 'status')
+
+                learned_rule_status = new_status
+                flagged_for_review = (new_status == 'provisional')
+                decision_reason = f'learned rule {rule.rule_id} from case {getattr(rule, "created_from_case", None)}'
+                if learned_rule_status is not None:
+                    # Count cases flagged for review
+                    if flagged_for_review:
+                        flagged_for_review_count += 1
+                learned_rules_applied_count += 1
             elif rule.action == 'always_review':
                 status = 'needs_review'
                 learned_rule_applied = rule.rule_id
-                # decision_reason remains from policy
+                # decision_reason remains from policy (if any)
+                # Do not modify learned_rule_status/flagged_for_review for always_review
             else:
                 # If rule action is something else, do not alter status
                 pass
@@ -267,10 +290,6 @@ def run_pipeline(db_path: str = ':memory:', data_dir: str = './seed/data', polic
         if decision_reason is None:
             if isinstance(policy_decision, dict) and 'reason' in policy_decision:
                 decision_reason = policy_decision.get('reason')
-
-        # If learned rule applied, ensure learned_rule_applied is captured
-        if learned_rule_applied is not None:
-            learned_rules_applied_count += 1
 
         # Build case dict
         case_dict = {
@@ -287,6 +306,8 @@ def run_pipeline(db_path: str = ':memory:', data_dir: str = './seed/data', polic
             'status': status,
             'pattern': pattern,
             'learned_rule_applied': learned_rule_applied,
+            'learned_rule_status': learned_rule_status,
+            'flagged_for_review': flagged_for_review,
             'decision_reason': decision_reason,
             'adjudicated': adjudicated,
             'adjudication_reason': adjudication_reason,
@@ -353,7 +374,8 @@ def run_pipeline(db_path: str = ':memory:', data_dir: str = './seed/data', polic
         },
         'exceptions': exceptions_counts,
         'audit_ok': audit_ok,
-        'learned_rules_applied': learned_rules_applied_count
+        'learned_rules_applied': learned_rules_applied_count,
+        'flagged_for_review': flagged_for_review_count
     }
 
     return summary
