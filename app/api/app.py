@@ -682,6 +682,49 @@ except Exception:
 
 
 # NEW ENDPOINTS: outbox
+@app.post("/gst/draft-all")
+async def gst_draft_all():
+    """Draft a chaser for every GST finding the supplier has to answer for.
+
+    The agent can do this itself with its draft_all_gst_chasers tool. This is the
+    manual override for when it chose not to: it calls the same drafting code, so
+    the result is identical either way.
+    """
+    gst = STATE.get('gst')
+    if not gst or gst.get('ran') is False:
+        return {'ok': False, 'error': 'no GST check has run yet', 'drafted': 0, 'drafts': []}
+    try:
+        from app.agent.vendor_email import drafts_from_gst
+        result = drafts_from_gst(gst, STATE.get('outbox'))
+        return {'ok': True, **result}
+    except Exception as e:  # noqa: BLE001
+        return {'ok': False, 'error': str(e), 'drafted': 0, 'drafts': []}
+
+
+@app.post("/gst/draft/{invoice_number}")
+async def gst_draft_one(invoice_number: str):
+    """Draft a chaser for one specific invoice."""
+    gst = STATE.get('gst')
+    if not gst or gst.get('ran') is False:
+        return {'ok': False, 'error': 'no GST check has run yet'}
+    exc = next((e for e in gst.get('exceptions', [])
+                if str(e.get('invoice_number')) == invoice_number), None)
+    if exc is None:
+        return JSONResponse(status_code=404, content={'detail': 'invoice not found in the GST findings'})
+    try:
+        from app.agent.vendor_email import CHASEABLE, _amounts, draft_and_enqueue
+        etype = exc.get('exception_type')
+        if etype not in CHASEABLE:
+            return {'ok': False,
+                    'error': 'this finding is our own bookkeeping gap, not something to chase the supplier about'}
+        taxable, tax = _amounts(exc)
+        return draft_and_enqueue(
+            STATE.get('outbox'), exc.get('invoice_number', ''), exc.get('supplier_gstin', ''),
+            CHASEABLE[etype], taxable_value=taxable, tax_at_risk=tax, exception_type=etype)
+    except Exception as e:  # noqa: BLE001
+        return {'ok': False, 'error': str(e)}
+
+
 @app.get("/outbox")
 async def outbox_status():
     try:

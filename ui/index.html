@@ -261,7 +261,7 @@ tbody tr[data-detail]{cursor:pointer}
     <div class="scroll" style="margin-top:20px">
       <table>
         <thead><tr><th>Invoice</th><th>Supplier GSTIN</th><th>Finding</th>
-          <th class="r">Δ Taxable</th><th class="r">Δ Tax</th></tr></thead>
+          <th class="r">Δ Taxable</th><th class="r">Δ Tax</th><th class="r">Action</th></tr></thead>
         <tbody id="gstRows"></tbody>
       </table>
     </div>
@@ -273,7 +273,10 @@ tbody tr[data-detail]{cursor:pointer}
         <h2>Vendor chasers</h2>
         <p class="sub" style="margin-bottom:0">Drafted by the agent for invoices no supplier filed. Nothing is sent until you send it.</p>
       </div>
-      <button id="sendAll" class="btn-quiet">Send all</button>
+      <div style="display:flex;gap:8px">
+        <button id="draftAll" class="btn-quiet">Draft all mails</button>
+        <button id="sendAll" class="btn-quiet">Send all</button>
+      </div>
     </div>
     <div id="outboxStats" class="run-meta" style="margin-top:16px"></div>
     <div id="drafts"></div>
@@ -493,13 +496,34 @@ function renderGst(g){
   const label = {missing_in_gstr2b:'Supplier has not filed',
                  value_mismatch:'Value differs',
                  missing_in_purchase_register:'Not in our register'};
-  $('gstRows').innerHTML = (g.exceptions||[]).length ? g.exceptions.map(e=>`<tr>
-      <td class="mono">${esc(e.invoice_number||'—')}</td>
+  // Only a supplier's own fault is worth chasing them about.
+  const chaseable = {missing_in_gstr2b:1, value_mismatch:1};
+  $('gstRows').innerHTML = (g.exceptions||[]).length ? g.exceptions.map(e=>{
+    const inv = e.invoice_number || '';
+    DETAILS['gst:'+inv] = {
+      title: 'Invoice ' + (inv||'—'),
+      why: e.exception_type==='missing_in_gstr2b'
+        ? 'The supplier has not filed this invoice in GSTR-2B, so we cannot claim input tax credit against it. Only they can fix it.'
+        : e.exception_type==='value_mismatch'
+        ? 'The supplier filed this invoice, but for a different value than our purchase register shows. The difference is the part of the credit at risk.'
+        : 'This appears in GSTR-2B but not in our purchase register. That is our own bookkeeping gap, not the supplier’s, so we do not chase them for it.',
+      rows: [['Supplier GSTIN', esc(e.supplier_gstin||'—')],
+             ['Finding', esc(label[e.exception_type]||'')],
+             ['Difference in taxable value', money(e.taxable_delta)],
+             ['Difference in tax', money(e.tax_delta)]]
+    };
+    const act = chaseable[e.exception_type]
+      ? `<button class="btn-mini" data-draft="${esc(inv)}">Draft mail</button>`
+      : '<span class="dim" style="font-size:12px">ours to fix</span>';
+    return `<tr data-detail="gst:${esc(inv)}">
+      <td class="mono">${esc(inv||'—')}</td>
       <td class="mono dim">${esc(e.supplier_gstin||'—')}</td>
       <td>${esc(label[e.exception_type]||(e.exception_type||'').replace(/_/g,' '))}</td>
       <td class="r num">${money(e.taxable_delta)}</td>
-      <td class="r num">${money(e.tax_delta)}</td></tr>`).join('')
-    : '<tr><td colspan="5" class="empty">Everything filed and matched.</td></tr>';
+      <td class="r num">${money(e.tax_delta)}</td>
+      <td class="r">${act}</td></tr>`;
+  }).join('')
+    : '<tr><td colspan="6" class="empty">Everything filed and matched.</td></tr>';
 }
 
 function renderClose(k){
@@ -654,6 +678,16 @@ $('sendAll').addEventListener('click', async () => {
   catch(e){ fail(e.message); }
 });
 
+$('draftAll').addEventListener('click', async ev => {
+  const b = ev.currentTarget; b.disabled = true; b.textContent = 'Drafting…';
+  try{
+    const r = await post('/gst/draft-all');
+    if(r.ok === false) fail(r.error || 'Could not draft. Ask the agent to check GST first.');
+    renderOutbox(await get('/outbox'));
+  }catch(e){ fail(e.message); }
+  finally{ b.disabled = false; b.textContent = 'Draft all mails'; }
+});
+
 document.addEventListener('click', async ev => {
   const ap = ev.target.closest('[data-approve]');
   if(ap){
@@ -671,6 +705,19 @@ document.addEventListener('click', async ev => {
       if(r.learned_rule_id) document.getElementById('rules').scrollIntoView({behavior:'smooth', block:'center'});
     }catch(e){ fail(e.message); ap.disabled = false; ap.textContent = 'Approve'; }
   }
+  const dr = ev.target.closest('[data-draft]');
+  if(dr){
+    const inv = dr.getAttribute('data-draft');
+    dr.disabled = true; dr.textContent = 'Drafting…';
+    try{
+      const r = await post('/gst/draft/' + encodeURIComponent(inv));
+      if(r.ok === false || r.detail) fail(r.error || r.detail);
+      renderOutbox(await get('/outbox'));
+      dr.textContent = 'Drafted';
+      document.getElementById('drafts').scrollIntoView({behavior:'smooth', block:'center'});
+    }catch(e){ fail(e.message); dr.disabled = false; dr.textContent = 'Draft mail'; }
+  }
+
   const sd = ev.target.closest('[data-send]');
   if(sd){
     const id = sd.getAttribute('data-send');
