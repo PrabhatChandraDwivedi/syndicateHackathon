@@ -4,6 +4,7 @@ import time
 import functools
 import logging
 from typing import Any, Callable, Dict, List, Optional
+from contextlib import contextmanager
 
 _STATE: Dict[str, Any] = {
     "initialized": False,
@@ -12,6 +13,7 @@ _STATE: Dict[str, Any] = {
 }
 
 SPANS: List[Dict[str, Any]] = []
+EVENTS: List[Dict[str, Any]] = []
 
 
 def init_tracing(run_id: Optional[str] = None, tags: Optional[List[str]] = None) -> bool:
@@ -111,3 +113,59 @@ def flush() -> bool:
         return True
     except Exception:
         return False
+
+
+def event(message: str, level: str = "info", **data) -> None:
+    # Record locally
+    EVENTS.append(
+        {
+            "message": message,
+            "level": level,
+            "data": dict(data),
+            "run_id": _STATE["run_id"],
+        }
+    )
+    # Forward to Neatlogs when enabled
+    if not is_enabled():
+        return
+    try:
+        import neatlogs
+        neatlogs.log(message, level=level, **data)
+    except Exception:
+        # Swallow forwarding failures to keep local observability intact
+        pass
+
+
+def detect(message: str, **data) -> None:
+    event(message, level="error", **data)
+
+
+def reset_events() -> None:
+    EVENTS.clear()
+
+
+@contextmanager
+def child_span(name: str, kind: str = "TOOL", **attributes):
+    start_time = time.time()
+    ok = True
+    try:
+        if is_enabled():
+            import neatlogs
+            with neatlogs.trace(name=name, kind=kind, **attributes):
+                yield
+        else:
+            yield
+    except Exception:
+        ok = False
+        raise
+    finally:
+        duration_ms = int((time.time() - start_time) * 1000)
+        SPANS.append(
+            {
+                "name": name,
+                "kind": kind,
+                "duration_ms": duration_ms,
+                "ok": ok,
+                "run_id": _STATE["run_id"],
+            }
+        )

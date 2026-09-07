@@ -8,3 +8,8 @@ node_modules/
 reconcileos.db
 dist/
 .pytest_cache/
+
+# runtime state: learned rules, outbox, audit chain
+data/
+# dataset is generated on first run
+seed/data/

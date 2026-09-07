@@ -1,665 +1,742 @@
 <!doctype html>
 <html lang="en">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>ReconcileOS Operator Dashboard</title>
-    <style>
-        :root {
-            --bg-color: #121212;
-            --card-bg: #1e1e1e;
-            --border-color: #333333;
-            --text-primary: #e0e0e0;
-            --text-secondary: #a0a0a0;
-            --accent-color: #3b82f6;
-            --accent-hover: #2563eb;
-            --success-color: #10b981;
-            --success-bg: rgba(16, 185, 129, 0.15);
-            --warning-color: #f59e0b;
-            --warning-bg: rgba(245, 158, 11, 0.15);
-            --error-color: #ef4444;
-            --error-bg: rgba(239, 68, 68, 0.15);
-            --font-stack: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        }
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ReconcileOS — month-end close</title>
+<style>
+:root{
+  --paper:#F6F7F9;
+  --card:#FFFFFF;
+  --rule:#DDE2E9;
+  --rule-soft:#EBEEF3;
+  --ink:#121922;
+  --ink-2:#3D4956;
+  --muted:#6B7787;
+  --oxblood:#96242A;
+  --oxblood-bg:#FBEFEF;
+  --ledger:#1B6B4E;
+  --ledger-bg:#EDF6F1;
+  --brass:#8A5A0B;
+  --brass-bg:#FBF3E4;
+  --accent:#1F3A5F;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --serif:Georgia,"Iowan Old Style","Times New Roman",serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper); color:var(--ink);
+  font-family:var(--sans); font-size:15px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+.num{font-variant-numeric:tabular-nums lining-nums}
+.wrap{max-width:1060px;margin:0 auto;padding:0 24px 96px}
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+/* ---------- masthead ---------- */
+.masthead{border-bottom:2px solid var(--ink);margin-bottom:0;padding:36px 0 18px}
+.masthead h1{
+  font-family:var(--serif); font-size:34px; line-height:1.1; font-weight:400;
+  margin:0 0 6px; letter-spacing:-.01em;
+}
+.masthead p{margin:0;color:var(--muted);font-size:15px;max-width:62ch}
+.period{margin-top:14px;font-size:13px;color:var(--muted)}
+.period b{color:var(--ink-2);font-weight:600}
+.demo-flag{border:1px solid var(--brass);color:var(--brass);background:var(--brass-bg);
+  padding:1px 8px;border-radius:3px;font-size:12px}
+.note{margin:10px 0 0;font-size:13px;line-height:1.55;color:var(--muted);max-width:70ch}
+.or{font-size:13px;color:var(--muted);margin:0 2px 0 8px}
 
-        body {
-            background-color: var(--bg-color);
-            color: var(--text-primary);
-            font-family: var(--font-stack);
-            line-height: 1.5;
-            padding: 20px;
-            min-height: 100vh;
-        }
+/* ---------- controls ---------- */
+.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:18px 0;border-bottom:1px solid var(--rule)}
+button{font-family:inherit;font-size:14px;cursor:pointer;border-radius:3px}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn-primary{
+  background:var(--ink); color:#fff; border:1px solid var(--ink);
+  padding:10px 20px; font-weight:600;
+}
+.btn-primary:hover{background:#000}
+.btn-primary[disabled]{background:var(--muted);border-color:var(--muted);cursor:progress}
+.btn-quiet{background:transparent;color:var(--ink-2);border:1px solid var(--rule);padding:9px 14px}
+.btn-quiet:hover{border-color:var(--ink-2);color:var(--ink)}
+.btn-mini{background:transparent;border:1px solid var(--rule);color:var(--ink-2);padding:4px 11px;font-size:13px}
+.btn-mini:hover{border-color:var(--ledger);color:var(--ledger)}
+.spinner{
+  width:13px;height:13px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;
+  border-radius:50%;display:inline-block;vertical-align:-2px;margin-right:7px;
+  animation:spin .7s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spinner{animation:none}}
 
-        .container {
-            max-width: 1100px;
-            margin: 0 auto;
-        }
+/* ---------- banner ---------- */
+.banner{display:none;margin:16px 0;padding:11px 14px;border-left:3px solid var(--oxblood);
+  background:var(--oxblood-bg);color:var(--oxblood);font-size:14px}
+.banner.on{display:block}
 
-        /* Header */
-        header {
-            margin-bottom: 24px;
-            padding-bottom: 16px;
-            border-bottom: 1px solid var(--border-color);
-        }
+/* ---------- section headings ---------- */
+section{padding:34px 0;border-bottom:1px solid var(--rule)}
+section > h2{
+  font-family:var(--sans); font-size:12px; font-weight:700; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted); margin:0 0 4px;
+}
+.sub{margin:0 0 20px;color:var(--muted);font-size:14px;max-width:64ch}
+.section-head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap}
 
-        h1 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--text-primary);
-        }
+/* ---------- figures row ---------- */
+.figures{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:0;
+  border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.fig{padding:16px 18px 16px 0;border-right:1px solid var(--rule-soft)}
+.fig:last-child{border-right:0}
+.fig .k{font-size:12px;color:var(--muted);margin-bottom:5px}
+.fig .v{font-size:26px;font-weight:600;letter-spacing:-.02em;line-height:1.1}
+.fig .v.ok{color:var(--ledger)} .fig .v.bad{color:var(--oxblood)} .fig .v.warn{color:var(--brass)}
 
-        h1 span {
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-            font-weight: 400;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            display: block;
-            margin-top: 4px;
-        }
+/* ---------- agent transcript ---------- */
+.run-meta{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-bottom:20px}
+.run-meta b{color:var(--ink-2)}
+.summary{
+  font-family:var(--serif);font-size:16px;line-height:1.65;color:var(--ink-2);
+  border-left:3px solid var(--rule);padding:2px 0 2px 18px;margin:0 0 26px;
+  white-space:pre-wrap;max-width:74ch;
+}
+ol.steps{list-style:none;margin:0;padding:0;counter-reset:s}
+ol.steps li{
+  counter-increment:s; position:relative; padding:16px 0 16px 46px;
+  border-top:1px solid var(--rule-soft);
+}
+ol.steps li:first-child{border-top:1px solid var(--rule)}
+ol.steps li::before{
+  content:counter(s); position:absolute; left:0; top:17px;
+  width:26px;height:26px;line-height:25px;text-align:center;
+  border:1px solid var(--rule);border-radius:50%;
+  font-size:12px;font-weight:600;color:var(--muted);background:var(--card);
+  font-variant-numeric:tabular-nums;
+}
+li.refused{background:var(--oxblood-bg);margin-left:-14px;padding-left:60px;border-radius:2px}
+li.refused::before{left:14px;border-color:var(--oxblood);color:var(--oxblood)}
+.thought{font-family:var(--serif);font-size:15.5px;line-height:1.6;color:var(--ink);margin:0 0 9px;max-width:72ch}
+.tool{font-family:var(--mono);font-size:12.5px;color:var(--accent);background:#EEF2F7;
+  border:1px solid #DCE4EE;padding:1px 7px;border-radius:3px;display:inline-block}
+.refused-tag{font-size:11px;font-weight:700;letter-spacing:.07em;color:var(--oxblood);
+  border:1px solid var(--oxblood);padding:1px 7px;border-radius:3px;margin-left:8px}
+.obs{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:8px;
+  white-space:pre-wrap;word-break:break-word;max-height:76px;overflow:auto}
+.obs.err{color:var(--oxblood)}
+.empty{color:var(--muted);font-size:14px;padding:22px 0;font-style:italic}
 
-        /* Toolbar */
-        .toolbar {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 24px;
-        }
+/* ---------- questions ---------- */
+.q{border:1px solid var(--brass);background:var(--brass-bg);padding:16px 18px;margin-bottom:12px;border-radius:3px}
+.q .qt{font-family:var(--serif);font-size:16px;line-height:1.55;margin:0 0 12px;color:#4A3106}
+.q .qm{font-size:12px;color:var(--brass);margin-bottom:8px;font-variant-numeric:tabular-nums}
+.learned{margin-top:10px;font-size:13px;color:var(--ledger)}
 
-        button {
-            background-color: var(--card-bg);
-            color: var(--text-primary);
-            border: 1px solid var(--border-color);
-            padding: 8px 16px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-family: inherit;
-            font-size: 0.9rem;
-            transition: background-color 0.2s, border-color 0.2s;
-        }
+/* ---------- tables ---------- */
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);
+  font-weight:600;padding:0 12px 9px 0;border-bottom:1px solid var(--ink)}
+td{padding:11px 12px 11px 0;border-bottom:1px solid var(--rule-soft);vertical-align:top}
+th.r,td.r{text-align:right;padding-right:0}
+tbody tr:hover{background:#FAFBFC}
+.pill{display:inline-block;font-size:12px;padding:2px 9px;border-radius:11px;white-space:nowrap}
+.pill.ok{background:var(--ledger-bg);color:var(--ledger)}
+.pill.warn{background:var(--brass-bg);color:var(--brass)}
+.pill.bad{background:var(--oxblood-bg);color:var(--oxblood)}
+.tag{font-size:11px;color:var(--ledger);border:1px solid #BFDDCE;background:var(--ledger-bg);
+  padding:1px 6px;border-radius:3px;margin-left:6px;white-space:nowrap}
+.mono{font-family:var(--mono);font-size:12.5px}
+.dim{color:var(--muted)}
 
-        button:hover:not(:disabled) {
-            background-color: #2d2d2d;
-            border-color: #444;
-        }
+/* ---------- bars ---------- */
+.bars{display:grid;gap:9px;max-width:520px}
+.bar{display:grid;grid-template-columns:170px 1fr 40px;align-items:center;gap:12px;font-size:13px}
+.bar .track{height:9px;background:var(--rule-soft);border-radius:1px;overflow:hidden}
+.bar .fill{height:100%;background:var(--accent)}
+.bar .n{text-align:right;color:var(--ink-2)}
 
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
+/* ---------- drafts ---------- */
+.draft{border:1px solid var(--rule);background:var(--card);padding:15px 17px;margin-bottom:10px;border-radius:3px}
+.draft .to{font-family:var(--mono);font-size:12.5px;color:var(--accent)}
+.draft .sj{font-weight:600;margin:5px 0 7px;font-size:14.5px}
+.draft .bd{font-size:13px;color:var(--muted);line-height:1.55;max-width:74ch;
+  border-left:2px solid var(--rule-soft);padding-left:12px}
+.draft .row{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-top:11px}
 
-        button.primary {
-            background-color: var(--accent-color);
-            border-color: var(--accent-color);
-            color: white;
-        }
+/* ---------- detail modal ---------- */
+tbody tr[data-detail]{cursor:pointer}
+.veil{position:fixed;inset:0;background:rgba(18,25,34,.45);display:none;
+  align-items:flex-start;justify-content:center;padding:6vh 20px;z-index:50}
+.veil.on{display:flex}
+.modal{background:var(--card);max-width:640px;width:100%;border-radius:4px;
+  border-top:4px solid var(--accent);box-shadow:0 18px 50px rgba(18,25,34,.28);
+  max-height:82vh;overflow:auto}
+.modal header{padding:20px 24px 14px;border-bottom:1px solid var(--rule);
+  display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+.modal h3{margin:0;font-family:var(--serif);font-size:21px;font-weight:400}
+.modal .why{font-family:var(--serif);font-size:15.5px;line-height:1.6;color:var(--ink-2);
+  padding:18px 24px 6px;max-width:66ch}
+.modal dl{margin:0;padding:8px 24px 22px;display:grid;grid-template-columns:150px 1fr;gap:9px 16px;font-size:14px}
+.modal dt{color:var(--muted);font-size:13px}
+.modal dd{margin:0;font-variant-numeric:tabular-nums;word-break:break-word}
+.x{background:transparent;border:0;font-size:22px;line-height:1;color:var(--muted);cursor:pointer;padding:0 2px}
+.x:hover{color:var(--ink)}
+.hint{font-size:13px;color:var(--muted);margin-top:6px}
 
-        button.primary:hover:not(:disabled) {
-            background-color: var(--accent-hover);
-        }
-
-        /* Stats Grid */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 16px;
-            margin-bottom: 24px;
-        }
-
-        .stat-card {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 16px;
-            text-align: center;
-        }
-
-        .stat-label {
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            margin-bottom: 8px;
-        }
-
-        .stat-value {
-            font-size: 1.25rem;
-            font-weight: 600;
-        }
-
-        .audit-chain-status {
-            font-size: 1rem;
-            font-weight: 600;
-        }
-
-        .audit-chain-status.verified {
-            color: var(--success-color);
-        }
-
-        .audit-chain-status.broken {
-            color: var(--error-color);
-        }
-
-        /* Exceptions Section */
-        .section-header {
-            font-size: 1.1rem;
-            font-weight: 600;
-            margin-bottom: 12px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .exceptions-container {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 16px;
-            margin-bottom: 24px;
-        }
-
-        .exception-bar-wrapper {
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            font-size: 0.9rem;
-        }
-
-        .exception-label {
-            width: 140px;
-            flex-shrink: 0;
-            color: var(--text-secondary);
-        }
-
-        .exception-bar-container {
-            flex-grow: 1;
-            background-color: #2d2d2d;
-            height: 8px;
-            border-radius: 4px;
-            margin: 0 12px;
-            overflow: hidden;
-            position: relative;
-        }
-
-        .exception-bar-fill {
-            height: 100%;
-            background-color: var(--warning-color);
-            border-radius: 4px;
-            transition: width 0.3s ease;
-        }
-
-        .exception-count {
-            width: 40px;
-            text-align: right;
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-
-        /* Queue Table */
-        .table-container {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            overflow-x: auto;
-            max-height: 500px;
-            display: block; /* fallback */
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.95rem;
-        }
-
-        th {
-            background-color: #252525;
-            color: var(--text-secondary);
-            font-weight: 600;
-            text-align: left;
-            padding: 12px 16px;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            box-shadow: 0 1px 0 var(--border-color);
-        }
-
-        td {
-            padding: 12px 16px;
-            border-bottom: 1px solid var(--border-color);
-            color: var(--text-primary);
-        }
-
-        tr:last-child td {
-            border-bottom: none;
-        }
-
-        tr:hover {
-            background-color: #252525;
-            cursor: pointer;
-        }
-
-        /* Detail Panel */
-        .detail-panel {
-            margin-top: 24px;
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 20px;
-            display: none; /* Hidden by default */
-        }
-
-        .detail-panel.visible {
-            display: block;
-            animation: fadeIn 0.2s ease-in-out;
-        }
-
-        .detail-title {
-            font-size: 1rem;
-            font-weight: 600;
-            margin-bottom: 12px;
-            color: var(--accent-color);
-        }
-
-        .detail-content {
-            font-family: "SF Mono", "Menlo", "Monaco", "Consolas", monospace;
-            font-size: 0.85rem;
-            white-space: pre-wrap;
-            color: var(--text-secondary);
-            background: rgba(0,0,0,0.2);
-            padding: 12px;
-            border-radius: 4px;
-        }
-
-        /* Status Pills */
-        .pill {
-            display: inline-block;
-            padding: 4px 8px;
-            border-radius: 999px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-
-        .pill.auto_resolved {
-            background-color: var(--success-bg);
-            color: var(--success-color);
-        }
-
-        .pill.needs_review {
-            background-color: var(--warning-bg);
-            color: var(--warning-color);
-        }
-
-        /* Error Banner */
-        .error-banner {
-            background-color: var(--error-bg);
-            border: 1px solid var(--error-color);
-            color: var(--error-color);
-            padding: 12px 16px;
-            border-radius: 6px;
-            margin-bottom: 20px;
-            display: none;
-            font-weight: 500;
-        }
-
-        .error-banner.visible {
-            display: block;
-            animation: slideDown 0.2s ease-out;
-        }
-
-        /* Loading Overlay */
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(18, 18, 18, 0.8);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-            backdrop-filter: blur(2px);
-        }
-
-        .loading-overlay.hidden {
-            display: none;
-        }
-
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid var(--border-color);
-            border-top: 4px solid var(--accent-color);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes slideDown { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-
-        /* Empty State */
-        .empty-state {
-            padding: 40px;
-            text-align: center;
-            color: var(--text-secondary);
-            font-style: italic;
-        }
-
-    </style>
+@media (max-width:640px){
+  .masthead h1{font-size:27px}
+  .bar{grid-template-columns:110px 1fr 36px}
+  .fig{border-right:0;border-bottom:1px solid var(--rule-soft)}
+  ol.steps li{padding-left:38px}
+}
+</style>
 </head>
 <body>
+<div class="wrap">
 
-    <div class="container">
-        <!-- Header -->
-        <header>
-            <h1>ReconcileOS <span>Autonomous reconciliation for the office of the CFO</span></h1>
-        </header>
+  <header class="masthead">
+    <h1>ReconcileOS</h1>
+    <p>An agent closes the books: it reconciles the ledgers, checks GST against GSTR-2B,
+       ties out the month, and brings you what it could not decide on its own.</p>
+    <div class="period">Period <b>August 2026</b> · Policy <b>v1</b> ·
+      <span class="demo-flag">Sample data</span></div>
+    <p class="note">Figures below come from a seeded demonstration dataset — 11 card lines, 9 bank
+      lines, a purchase register and an operations export, generated on first load so the numbers are
+      reproducible between runs. Nothing here is a real ledger.</p>
+  </header>
 
-        <!-- Error Banner -->
-        <div id="error-banner" class="error-banner">
-            <strong>Error:</strong> <span id="error-message">An error occurred while fetching data.</span>
-        </div>
+  <div class="controls">
+    <button id="run" class="btn-primary" data-goal="full">Run the whole close</button>
+    <span class="or">or ask it to do one thing:</span>
+    <button class="btn-quiet task" data-goal="cash">Match card to bank</button>
+    <button class="btn-quiet task" data-goal="gst">Check GST</button>
+    <button class="btn-quiet task" data-goal="close">Tie out the month</button>
+  </div>
+  <div class="controls" style="border-bottom:1px solid var(--rule);padding-top:0">
+    <button id="refresh" class="btn-quiet">Refresh</button>
+    <button id="reset" class="btn-quiet">Start over</button>
+    <span id="runmeta" class="dim" style="font-size:13px"></span>
+  </div>
 
-        <!-- Toolbar -->
-        <div class="toolbar">
-            <button id="btn-run" class="primary">Run reconciliation</button>
-            <button id="btn-refresh">Refresh</button>
-        </div>
+  <div id="banner" class="banner"></div>
 
-        <!-- Stats -->
-        <section class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-label">Close readiness</div>
-                <div class="stat-value" id="stat-readiness">--%</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Total cases</div>
-                <div class="stat-value" id="stat-total">--</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Auto-resolved</div>
-                <div class="stat-value" id="stat-auto">--</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Needs review</div>
-                <div class="stat-value" id="stat-needs">--</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Audit chain</div>
-                <div class="audit-chain-status" id="stat-audit">--</div>
-            </div>
-        </section>
+  <section>
+    <div class="figures" id="figures"></div>
+  </section>
 
-        <!-- Exceptions -->
-        <section>
-            <div class="section-header">Exceptions</div>
-            <div class="exceptions-container" id="exceptions-container">
-                <div class="empty-state">No exceptions recorded yet.</div>
-            </div>
-        </section>
+  <section>
+    <h2>What the agent did</h2>
+    <p class="sub">Each step is the agent choosing a tool, seeing the result, and deciding what to do next.</p>
+    <div id="agentmeta" class="run-meta"></div>
+    <div id="summary"></div>
+    <ol class="steps" id="steps"></ol>
+    <div id="stepsEmpty" class="empty">No run yet. Press “Run the close” and the agent will work through the period.</div>
+  </section>
 
-        <!-- Exception Queue -->
-        <section>
-            <div class="section-header">Exception Queue</div>
-            <div class="table-container">
-                <table id="cases-table">
-                    <thead>
-                        <tr>
-                            <th>Case</th>
-                            <th>Status</th>
-                            <th>Confidence</th>
-                            <th>Method</th>
-                            <th>Exception</th>
-                            <th>Amount Delta</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="cases-tbody">
-                        <tr><td colspan="7" class="empty-state">Loading...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
+  <section id="qsec">
+    <h2>Waiting on you</h2>
+    <p class="sub">The agent stopped short of deciding these. Approving one teaches it to handle that pattern itself next time.</p>
+    <div id="questions"></div>
+  </section>
 
-        <!-- Details Panel -->
-        <div id="detail-panel" class="detail-panel">
-            <div class="detail-title">Case Details (Reasons)</div>
-            <div id="detail-content" class="detail-content"></div>
-        </div>
+  <section>
+    <h2>Exceptions</h2>
+    <div class="bars" id="bars"></div>
+    <div class="scroll" style="margin-top:24px">
+      <table id="casesTable">
+        <thead><tr>
+          <th>Case</th><th>Status</th><th class="r">Confidence</th><th>Method</th>
+          <th>Exception</th><th class="r">Δ Amount</th><th class="r">Action</th>
+        </tr></thead>
+        <tbody id="cases"></tbody>
+      </table>
     </div>
+  </section>
 
-    <!-- Loading Overlay -->
-    <div id="loading-overlay" class="loading-overlay hidden">
-        <div class="spinner"></div>
+  <section>
+    <div class="section-head"><h2>GST · input tax credit</h2></div>
+    <p class="sub">Purchase register against what suppliers actually filed in GSTR-2B.</p>
+    <div class="figures" id="gstFigures"></div>
+    <div class="scroll" style="margin-top:20px">
+      <table>
+        <thead><tr><th>Invoice</th><th>Supplier GSTIN</th><th>Finding</th>
+          <th class="r">Δ Taxable</th><th class="r">Δ Tax</th><th class="r">Action</th></tr></thead>
+        <tbody id="gstRows"></tbody>
+      </table>
     </div>
+  </section>
 
-    <script>
-        const State = {
-            isLoading: false
-        };
+  <section>
+    <div class="section-head">
+      <div>
+        <h2>Vendor chasers</h2>
+        <p class="sub" style="margin-bottom:0">Drafted by the agent for invoices no supplier filed. Nothing is sent until you send it.</p>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="draftAll" class="btn-quiet">Draft all mails</button>
+        <button id="sendAll" class="btn-quiet">Send all</button>
+      </div>
+    </div>
+    <div id="outboxStats" class="run-meta" style="margin-top:16px"></div>
+    <div id="drafts"></div>
+  </section>
 
-        const UI = {
-            errorBanner: document.getElementById('error-banner'),
-            errorMessage: document.getElementById('error-message'),
-            loadingOverlay: document.getElementById('loading-overlay'),
-            btnRun: document.getElementById('btn-run'),
-            btnRefresh: document.getElementById('btn-refresh'),
-            statReadiness: document.getElementById('stat-readiness'),
-            statTotal: document.getElementById('stat-total'),
-            statAuto: document.getElementById('stat-auto'),
-            statNeeds: document.getElementById('stat-needs'),
-            statAudit: document.getElementById('stat-audit'),
-            exceptionsContainer: document.getElementById('exceptions-container'),
-            tableBody: document.getElementById('cases-tbody'),
-            detailPanel: document.getElementById('detail-panel'),
-            detailContent: document.getElementById('detail-content')
-        };
+  <section>
+    <h2>Month close</h2>
+    <p class="sub">Every order tied from operations through the invoice ledger to the bank.</p>
+    <div class="figures" id="closeFigures"></div>
+    <div class="scroll" style="margin-top:20px">
+      <table>
+        <thead><tr><th>Order</th><th>Status</th><th class="r">Ops net</th>
+          <th class="r">Invoiced</th><th class="r">Settled</th><th class="r">Variance</th></tr></thead>
+        <tbody id="closeRows"></tbody>
+      </table>
+    </div>
+    <div id="unexplained" class="sub" style="margin-top:16px"></div>
+  </section>
 
-        function setError(message) {
-            UI.errorMessage.textContent = message;
-            UI.errorBanner.classList.add('visible');
-        }
+  <section style="border-bottom:0">
+    <h2>What the agent has learned</h2>
+    <p class="sub">Rules come from your decisions. Each is capped near the amount it was learned on, stays provisional until it has proved itself, and is revoked the moment you reject something it resolved.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Pattern</th><th>Then</th><th>Standing</th>
+          <th class="r">Applied</th><th class="r">Valid up to</th><th>From</th></tr></thead>
+        <tbody id="rules"></tbody>
+      </table>
+    </div>
+  </section>
 
-        function clearError() {
-            UI.errorBanner.classList.remove('visible');
-        }
+</div>
 
-        function setLoading(isLoading) {
-            State.isLoading = isLoading;
-            UI.loadingOverlay.classList.toggle('hidden', !isLoading);
-            UI.btnRun.disabled = isLoading;
-            UI.btnRefresh.disabled = isLoading;
-        }
+<div class="veil" id="veil">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <header><h3 id="mTitle"></h3><button class="x" id="mClose" aria-label="Close">&times;</button></header>
+    <div class="why" id="mWhy"></div>
+    <dl id="mBody"></dl>
+  </div>
+</div>
 
-        async function fetchJSON(url, options = {}) {
-            try {
-                const response = await fetch(url, options);
-                if (!response.ok) {
-                    throw new Error(`Server responded with status ${response.status}`);
-                }
-                return await response.json();
-            } catch (err) {
-                console.error(`Fetch error for ${url}:`, err);
-                setError(`Failed to fetch data: ${err.message}`);
-                return null;
-            }
-        }
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const money = n => (Number(n)||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+const pct = n => ((Number(n)||0)*100).toFixed(1) + '%';
 
-        async function fetchData() {
-            clearError();
-            
-            // 1. Close Readiness (Stats + Exceptions)
-            const readyData = await fetchJSON('/close-readiness');
-            if (!readyData) return;
+function fail(msg){ const b=$('banner'); b.textContent = msg; b.classList.add('on'); }
+function clearFail(){ $('banner').classList.remove('on'); }
 
-            // 2. Metrics (Audit status mostly)
-            const metricsData = await fetchJSON('/metrics');
-            if (!metricsData) return;
+async function get(url){
+  const r = await fetch(url);
+  if(!r.ok) throw new Error(url + ' returned ' + r.status);
+  return r.json();
+}
+async function post(url, body){
+  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+                              body: body ? JSON.stringify(body) : '{}'});
+  if(!r.ok && r.status !== 400 && r.status !== 404) throw new Error(url + ' returned ' + r.status);
+  return r.json();
+}
 
-            // 3. Cases
-            const casesData = await fetchJSON('/cases');
-            if (!casesData) return;
+function figures(el, items){
+  el.innerHTML = items.map(f =>
+    `<div class="fig"><div class="k">${esc(f.k)}</div><div class="v num ${f.tone||''}">${f.v}</div></div>`
+  ).join('');
+}
 
-            renderStats(readyData, metricsData);
-            renderExceptions(readyData.exceptions);
-            renderTable(casesData.cases || []);
-        }
+/* ---------- agent ---------- */
+function isRefused(step){
+  const o = step.observation;
+  if(o && typeof o === 'object' && o.refused) return true;
+  const t = (JSON.stringify(o||'') + ' ' + (step.error||'')).toLowerCase();
+  return t.includes('policy blocks') || t.includes('refused');
+}
 
-        function renderStats(ready, metrics) {
-            // Close readiness
-            UI.statReadiness.textContent = `${ready.readiness}%`;
-            
-            // Audit Chain
-            UI.statAudit.className = 'audit-chain-status';
-            if (metrics.audit_ok) {
-                UI.statAudit.textContent = 'VERIFIED';
-                UI.statAudit.classList.add('verified');
-            } else {
-                UI.statAudit.textContent = 'BROKEN';
-                UI.statAudit.classList.add('broken');
-            }
+function renderAgent(a){
+  if(!a || !a.step_count){ $('steps').innerHTML=''; $('summary').innerHTML='';
+    $('agentmeta').innerHTML=''; $('stepsEmpty').style.display='block'; return; }
+  $('stepsEmpty').style.display='none';
 
-            // Count stats (ensure they exist)
-            UI.statTotal.textContent = ready.total_cases || 0;
-            UI.statAuto.textContent = ready.auto_resolved || 0;
-            UI.statNeeds.textContent = ready.needs_review || 0;
-        }
+  const stopped = a.stopped_reason==='done'||a.stopped_reason==='completed' ? 'finished'
+                : a.stopped_reason==='max_steps' ? 'stopped at its step limit'
+                : a.stopped_reason==='router_error' ? 'could not reach a model'
+                : esc(a.stopped_reason||'');
+  $('agentmeta').innerHTML =
+    `<span><b>${a.step_count}</b> steps</span><span><b>${a.tool_calls}</b> tool calls</span>` +
+    `<span>${esc(stopped)}</span>`;
 
-        function renderExceptions(exceptionsObj) {
-            UI.exceptionsContainer.innerHTML = '';
-            
-            if (!exceptionsObj || Object.keys(exceptionsObj).length === 0) {
-                UI.exceptionsContainer.innerHTML = '<div class="empty-state">No exceptions recorded.</div>';
-                return;
-            }
+  $('summary').innerHTML = a.summary ? `<div class="summary">${esc(a.summary)}</div>` : '';
 
-            // Find max count for scaling
-            const counts = Object.values(exceptionsObj);
-            const maxCount = counts.length > 0 ? Math.max(...counts) : 1;
+  $('steps').innerHTML = (a.steps||[]).map(s => {
+    const ref = isRefused(s);
+    const tool = s.tool ? `<span class="tool">${esc(s.tool)}</span>` : '<span class="dim" style="font-size:13px">concluded</span>';
+    let obs = '';
+    if(s.error) obs = `<div class="obs err">${esc(s.error)}</div>`;
+    else if(s.observation) obs = `<div class="obs">${esc(JSON.stringify(s.observation))}</div>`;
+    return `<li class="${ref?'refused':''}">
+      <div class="thought">${esc(s.thought||'')}</div>
+      <div>${tool}${ref?'<span class="refused-tag">Refused by policy</span>':''}</div>
+      ${obs}</li>`;
+  }).join('');
+}
 
-            for (const [type, count] of Object.entries(exceptionsObj)) {
-                const percentage = (count / maxCount) * 100;
-                
-                const wrapper = document.createElement('div');
-                wrapper.className = 'exception-bar-wrapper';
-                
-                wrapper.innerHTML = `
-                    <div class="exception-label">${type}</div>
-                    <div class="exception-bar-container">
-                        <div class="exception-bar-fill" style="width: ${percentage}%"></div>
-                    </div>
-                    <div class="exception-count">${count}</div>
-                `;
-                
-                UI.exceptionsContainer.appendChild(wrapper);
-            }
-        }
+function renderQuestions(qs, cases){
+  const open = (cases||[]).filter(c => c.status === 'needs_review' && !c.exception_type && c.pattern);
+  const items = [];
+  (qs||[]).forEach(q => items.push({case_id:q.case_id, text:q.question}));
+  open.forEach(c => { if(!items.some(i=>i.case_id===c.case_id))
+    items.push({case_id:c.case_id, text:`Should ${esc(c.pattern)} at ${pct(c.confidence)} confidence be treated as a match?`}); });
 
-        function renderTable(cases) {
-            UI.tableBody.innerHTML = '';
+  $('qsec').style.display = items.length ? '' : 'none';
+  $('questions').innerHTML = items.map(q => `
+    <div class="q">
+      <div class="qm">${esc(q.case_id)}</div>
+      <div class="qt">${q.text}</div>
+      <button class="btn-mini" data-approve="${esc(q.case_id)}">Approve and remember</button>
+      <span class="learned" id="learn-${esc(q.case_id)}"></span>
+    </div>`).join('');
+}
 
-            if (!cases || cases.length === 0) {
-                UI.tableBody.innerHTML = '<tr><td colspan="7" class="empty-state">No cases found.</td></tr>';
-                return;
-            }
+/* ---------- panels ---------- */
+/* ---------- why a case was flagged ---------- */
+const WHY = {
+  duplicate_transaction: 'Same amount, same date and same merchant as an earlier line, so this looks like the same charge counted twice. Duplicates always go to a person — a learned rule can never resolve one.',
+  split_payment: 'One bank credit equals the sum of several card lines, found by subset-sum. That is a heuristic — more than one combination can add up to the same total — so a person confirms it before it is treated as settled.',
+  amount_mismatch: 'The amounts differ by more than the tolerance in policy, so this is not a clean match.',
+  date_out_of_tolerance: 'The settlement fell outside the allowed window of days after the transaction.',
+  ambiguous_match: 'More than one candidate scored close together, so there is no clear winner.',
+  unmatched_source: 'Nothing on the bank side corresponds to this line.',
+  unmatched_target: 'A bank line nothing on the card side explains.',
+  merchant_unresolved: 'The merchant could not be resolved from the descriptor.'
+};
+const DETAILS = {};
 
-            cases.forEach(c => {
-                const tr = document.createElement('tr');
-                
-                // Determine pill class
-                let pillClass = '';
-                if (c.status === 'auto_resolved') pillClass = 'auto_resolved';
-                else if (c.status === 'needs_review') pillClass = 'needs_review';
+function openDetail(key){
+  const d = DETAILS[key]; if(!d) return;
+  $('mTitle').textContent = d.title;
+  $('mWhy').textContent = d.why || '';
+  $('mBody').innerHTML = d.rows.map(([k,v]) =>
+    `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('');
+  $('veil').classList.add('on');
+  $('mClose').focus();
+}
+function closeDetail(){ $('veil').classList.remove('on'); }
+$('mClose').addEventListener('click', closeDetail);
+$('veil').addEventListener('click', e => { if(e.target === $('veil')) closeDetail(); });
+document.addEventListener('keydown', e => { if(e.key === 'Escape') closeDetail(); });
+document.addEventListener('dblclick', e => {
+  const tr = e.target.closest('tr[data-detail]');
+  if(tr) openDetail(tr.getAttribute('data-detail'));
+});
 
-                // Format confidence
-                const confidenceDisplay = typeof c.confidence === 'number' ? `${c.confidence}%` : c.confidence || '-';
+function renderCases(cases, exceptions){
+  const max = Math.max(1, ...Object.values(exceptions||{}).map(Number));
+  $('bars').innerHTML = Object.keys(exceptions||{}).length
+    ? Object.entries(exceptions).map(([k,v]) =>
+      `<div class="bar"><span>${esc(k.replace(/_/g,' '))}</span>
+        <span class="track"><span class="fill" style="width:${(v/max)*100}%"></span></span>
+        <span class="n num">${v}</span></div>`).join('')
+    : '<div class="empty">Nothing outstanding.</div>';
 
-                tr.innerHTML = `
-                    <td><strong>${c.case_id}</strong></td>
-                    <td><span class="pill ${pillClass}">${c.status}</span></td>
-                    <td>${confidenceDisplay}</td>
-                    <td>${c.method}</td>
-                    <td>${c.exception_type}</td>
-                    <td>${c.amount_delta !== undefined ? c.amount_delta : '-'}</td>
-                    <td><button class="approve-btn" data-id="${c.case_id}">Approve</button></td>
-                `;
+  $('cases').innerHTML = (cases||[]).length ? cases.map(c => {
+    const cls = c.status==='auto_resolved' ? 'ok' : 'warn';
+    const label = c.status==='auto_resolved' ? 'resolved' : 'needs review';
+    const learned = c.learned_rule_applied ? '<span class="tag">from memory</span>' : '';
+    const act = c.status==='needs_review'
+      ? `<button class="btn-mini" data-approve="${esc(c.case_id)}">Approve</button>` : '';
+    let reasons = [];
+    try{ reasons = JSON.parse(c.reasons || '[]'); }catch(_){ reasons = []; }
+    DETAILS['case:'+c.case_id] = {
+      title: 'Case ' + c.case_id,
+      why: c.exception_type ? (WHY[c.exception_type] || 'Flagged by the exception taxonomy.')
+           : (c.status==='auto_resolved'
+              ? 'No exception was raised and confidence cleared the policy threshold, so the agent resolved it.'
+              : 'No exception, but confidence sat below the auto-resolve threshold, so a person decides.'),
+      rows: [
+        ['Status', esc(c.status)],
+        ['Confidence', pct(c.confidence)],
+        ['Method', esc((c.method||'').replace(/_/g,' '))],
+        ['Exception', c.exception_type ? esc(c.exception_type.replace(/_/g,' ')) : 'none'],
+        ['Amount difference', money(c.amount_delta)],
+        ['Matched on', esc(c.pattern || '—')],
+        ['Card lines', `<span class="mono">${esc(c.source_ids||'[]')}</span>`],
+        ['Bank lines', `<span class="mono">${esc(c.candidate_target_ids||'[]')}</span>`],
+        ['Why it scored that way', reasons.length ? reasons.map(esc).join('<br>') : '—'],
+        ['Decision', esc(c.decision_reason || '—')],
+        ['From memory', c.learned_rule_applied
+          ? esc(c.learned_rule_applied) + (c.learned_rule_status ? ' (' + esc(c.learned_rule_status) + ')' : '')
+          : 'no']
+      ]
+    };
+    return `<tr data-detail="case:${esc(c.case_id)}">
+      <td class="mono">${esc(c.case_id)}</td>
+      <td><span class="pill ${cls}">${label}</span>${learned}</td>
+      <td class="r num">${pct(c.confidence)}</td>
+      <td class="dim">${esc((c.method||'').replace(/_/g,' '))}</td>
+      <td>${c.exception_type?`<span class="pill bad">${esc(c.exception_type.replace(/_/g,' '))}</span>`:'<span class="dim">—</span>'}</td>
+      <td class="r num">${money(c.amount_delta)}</td>
+      <td class="r">${act}</td></tr>`;
+  }).join('') : '<tr><td colspan="7" class="empty">No cases yet.</td></tr>';
+}
 
-                // Row click for details
-                tr.addEventListener('click', (e) => {
-                    if (e.target.classList.contains('approve-btn')) return; // Don't trigger row click on button
-                    fetchCaseDetails(c.case_id);
-                });
+function renderGst(g){
+  const ran = g.ran !== false;
+  figures($('gstFigures'), ran ? [
+    {k:'Input tax credit at risk', v:'₹'+money(g.itc_at_risk), tone: (g.itc_at_risk>0?'bad':'ok')},
+    {k:'Invoices matched', v:g.matched ?? 0, tone:'ok'},
+    {k:'Findings', v:(g.exceptions||[]).length, tone:(g.exceptions||[]).length?'warn':'ok'}
+  ] : [
+    {k:'Input tax credit at risk', v:'—'},
+    {k:'Invoices matched', v:'—'},
+    {k:'Findings', v:'—'}
+  ]);
+  if(!ran){ $('gstRows').innerHTML =
+    '<tr><td colspan="5" class="empty">Not checked yet. Ask the agent to check GST.</td></tr>'; return; }
+  const label = {missing_in_gstr2b:'Supplier has not filed',
+                 value_mismatch:'Value differs',
+                 missing_in_purchase_register:'Not in our register'};
+  // Only a supplier's own fault is worth chasing them about.
+  const chaseable = {missing_in_gstr2b:1, value_mismatch:1};
+  $('gstRows').innerHTML = (g.exceptions||[]).length ? g.exceptions.map(e=>{
+    const inv = e.invoice_number || '';
+    DETAILS['gst:'+inv] = {
+      title: 'Invoice ' + (inv||'—'),
+      why: e.exception_type==='missing_in_gstr2b'
+        ? 'The supplier has not filed this invoice in GSTR-2B, so we cannot claim input tax credit against it. Only they can fix it.'
+        : e.exception_type==='value_mismatch'
+        ? 'The supplier filed this invoice, but for a different value than our purchase register shows. The difference is the part of the credit at risk.'
+        : 'This appears in GSTR-2B but not in our purchase register. That is our own bookkeeping gap, not the supplier’s, so we do not chase them for it.',
+      rows: [['Supplier GSTIN', esc(e.supplier_gstin||'—')],
+             ['Finding', esc(label[e.exception_type]||'')],
+             ['Difference in taxable value', money(e.taxable_delta)],
+             ['Difference in tax', money(e.tax_delta)]]
+    };
+    const act = chaseable[e.exception_type]
+      ? `<button class="btn-mini" data-draft="${esc(inv)}">Draft mail</button>`
+      : '<span class="dim" style="font-size:12px">ours to fix</span>';
+    return `<tr data-detail="gst:${esc(inv)}">
+      <td class="mono">${esc(inv||'—')}</td>
+      <td class="mono dim">${esc(e.supplier_gstin||'—')}</td>
+      <td>${esc(label[e.exception_type]||(e.exception_type||'').replace(/_/g,' '))}</td>
+      <td class="r num">${money(e.taxable_delta)}</td>
+      <td class="r num">${money(e.tax_delta)}</td>
+      <td class="r">${act}</td></tr>`;
+  }).join('')
+    : '<tr><td colspan="6" class="empty">Everything filed and matched.</td></tr>';
+}
 
-                UI.tableBody.appendChild(tr);
-            });
+function renderClose(k){
+  const s = k.summary||{};
+  const ran = k.ran !== false;
+  figures($('closeFigures'), ran ? [
+    {k:'Close readiness', v:pct(k.readiness), tone:(k.readiness>=0.9?'ok':k.readiness>=0.5?'warn':'bad')},
+    {k:'Closed', v:s.closed??0, tone:'ok'},
+    {k:'Partial', v:s.partial??0, tone:'warn'},
+    {k:'Orphan', v:s.orphan??0, tone:(s.orphan?'bad':'')}
+  ] : [
+    {k:'Close readiness', v:'—'}, {k:'Closed', v:'—'},
+    {k:'Partial', v:'—'}, {k:'Orphan', v:'—'}
+  ]);
+  if(!ran){
+    $('closeRows').innerHTML =
+      '<tr><td colspan="6" class="empty">Not tied out yet. Ask the agent to tie out the month.</td></tr>';
+    $('unexplained').innerHTML = ''; return;
+  }
+  $('closeRows').innerHTML = (k.rows||[]).length ? k.rows.map(r=>{
+    const cls = r.status==='closed'?'ok':r.status==='partial'?'warn':'bad';
+    return `<tr><td class="mono">${esc(r.order_ref)}</td>
+      <td><span class="pill ${cls}">${esc(r.status)}</span></td>
+      <td class="r num">${money(r.ops_net)}</td>
+      <td class="r num">${money(r.erp_amount)}</td>
+      <td class="r num">${money(r.bank_amount)}</td>
+      <td class="r num" ${Math.abs(Number(r.variance))>0.01?'style="color:var(--oxblood)"':''}>${money(r.variance)}</td></tr>`;
+  }).join('') : '<tr><td colspan="6" class="empty">No orders.</td></tr>';
+  const u = k.unexplained_bank||[];
+  $('unexplained').innerHTML = u.length
+    ? `Bank credits nothing explains: <span class="mono">${u.map(esc).join(', ')}</span>`
+    : 'Every bank credit is accounted for.';
+}
 
-            // Attach approve event listeners
-            document.querySelectorAll('.approve-btn').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    e.stopPropagation(); // Prevent row click
-                    const caseId = btn.dataset.id;
-                    await approveCase(caseId);
-                });
-            });
-        }
+function renderOutbox(o){
+  const st = o.stats||{};
+  $('outboxStats').innerHTML =
+    `<span><b>${st.pending??0}</b> waiting</span><span><b>${st.sent??0}</b> sent</span>` +
+    (st.failed ? `<span style="color:var(--oxblood)"><b>${st.failed}</b> failed</span>` : '');
+  const p = o.pending||[];
+  $('drafts').innerHTML = p.length ? p.map(d=>`
+    <div class="draft">
+      <div class="to">${esc(d.recipient)}</div>
+      <div class="sj">${esc(d.subject)}</div>
+      <div class="bd">${esc((d.body||'').slice(0,200))}${(d.body||'').length>200?'…':''}</div>
+      <div class="row">
+        <span class="dim" style="font-size:12px">${d.case_id?'Case '+esc(d.case_id):''}</span>
+        <button class="btn-mini" data-send="${d.id}">Send</button>
+      </div>
+    </div>`).join('')
+    : '<div class="empty">No chasers drafted. The agent writes these after it checks GST.</div>';
+}
 
-        async function fetchCaseDetails(id) {
-            clearError();
-            const caseData = await fetchJSON(`/cases/${id}`);
-            if (caseData) {
-                renderDetails(caseData.reasons);
-            }
-        }
+function renderRules(rs){
+  $('rules').innerHTML = (rs||[]).length ? rs.map(r=>{
+    const live = r.enabled !== false;
+    const standing = !live ? '<span class="pill bad">revoked</span>'
+      : r.status==='promoted' ? '<span class="pill ok">trusted</span>'
+      : '<span class="pill warn">provisional</span>';
+    const cap = Number(r.max_amount)>0 ? '₹'+money(r.max_amount) : 'any amount';
+    return `<tr>
+      <td class="mono">${esc(r.pattern)}</td>
+      <td>${esc((r.action||'').replace(/_/g,' '))}</td>
+      <td>${standing}${r.revoked_reason?`<div class="dim" style="font-size:12px;margin-top:4px">${esc(r.revoked_reason)}</div>`:''}</td>
+      <td class="r num">${r.applied_count ?? r.hit_count ?? 0}</td>
+      <td class="r num">${cap}</td>
+      <td class="mono dim">${esc(r.created_from_case||'—')}</td></tr>`;
+  }).join('') : '<tr><td colspan="6" class="empty">Nothing learned yet. Approve a case and it will remember.</td></tr>';
+}
 
-        function renderDetails(reasonsString) {
-            try {
-                // Parse JSON if it's a string, otherwise use raw
-                const reasons = typeof reasonsString === 'string' ? JSON.parse(reasonsString) : reasonsString;
-                UI.detailContent.textContent = JSON.stringify(reasons, null, 2);
-            } catch (e) {
-                UI.detailContent.textContent = reasonsString || 'No reasons available.';
-            }
-            UI.detailPanel.classList.add('visible');
-        }
+/* ---------- load ---------- */
+async function loadAll(){
+  clearFail();
+  try{
+    const [cr, mx, cs, gst, cl, ru, ob, ag] = await Promise.all([
+      get('/close-readiness'), get('/metrics'), get('/cases'), get('/gst/reconcile'),
+      get('/close/status'), get('/rules'), get('/outbox'), get('/agent/last')
+    ]);
+    // Nothing has run yet: show dashes, not zeros dressed up as findings.
+    const hasRun = (cs.cases || []).length > 0;
+    figures($('figures'), hasRun ? [
+      {k:'Close readiness', v:pct(cr.readiness), tone:(cr.readiness>=0.9?'ok':cr.readiness>=0.5?'warn':'bad')},
+      {k:'Cases', v:cr.total_cases ?? 0},
+      {k:'Resolved', v:cr.auto_resolved ?? 0, tone:'ok'},
+      {k:'Needs review', v:cr.needs_review ?? 0, tone:(cr.needs_review?'warn':'ok')},
+      {k:'Audit chain', v: mx.audit_ok ? 'Intact' : 'Broken', tone: mx.audit_ok?'ok':'bad'}
+    ] : [
+      {k:'Close readiness', v:'—'},
+      {k:'Cases', v:'—'},
+      {k:'Resolved', v:'—'},
+      {k:'Needs review', v:'—'},
+      {k:'Audit chain', v:'Not yet run'}
+    ]);
+    $('runmeta').textContent = mx.run_id ? 'Run ' + mx.run_id : '';
+    renderCases(cs.cases, cr.exceptions || mx.exceptions);
+    renderQuestions(ag.questions, cs.cases);
+    renderGst(gst); renderClose(cl); renderRules(ru.rules); renderOutbox(ob); renderAgent(ag);
+  }catch(e){ fail(e.message + ' — is the server running?'); }
+}
 
-        async function approveCase(id) {
-            clearError();
-            const success = await fetchJSON(`/cases/${id}/decision`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'approve' })
-            });
-            
-            if (success) {
-                // Refresh on success
-                await fetchData();
-            }
-        }
+/* ---------- actions ---------- */
+/* Each button asks the AGENT to pursue a goal — it still chooses its own tools. */
+/* The period and its data are already configured, so the goals say so plainly.
+   Otherwise the agent stops to ask which period to close and gets nowhere. */
+const CONTEXT =
+  'The period and all its data are already loaded and configured. Do not ask which period to ' +
+  'close and do not ask for any input before starting — begin working immediately. There are no ' +
+  'cases until you run the reconciliation, so run it first if you need cases to review.';
 
-        // Event Listeners
-        UI.btnRun.addEventListener('click', async () => {
-            clearError();
-            // Run reconciliation
-            await fetchJSON('/run', { method: 'POST' });
-            // Refresh everything
-            await fetchData();
-        });
+const GOALS = {
+  full: {steps:16, label:'Run the whole close', goal:
+    'You own the month-end close. ' + CONTEXT + ' Run the reconciliation first, then check GST ' +
+    'against GSTR-2B and draft chasers for the suppliers at fault, then check the three-way month ' +
+    'close. Then review the open cases: consult the learned rules and the policy, resolve what is ' +
+    'safe to resolve, and escalate anything that needs a person.'},
+  cash: {steps:10, label:'Match card to bank', goal:
+    'Reconcile the corporate card feed against the bank feed. ' + CONTEXT + ' Run the ' +
+    'reconciliation first, then review the open cases: check the learned rules and the policy, ' +
+    'resolve what is safe, and escalate anything you cannot decide. Do not run the GST or ' +
+    'month-close checks.'},
+  gst: {steps:8, label:'Check GST', goal:
+    'Check the purchase register against GSTR-2B. ' + CONTEXT + ' Run the GST check first, report ' +
+    'what is matched and how much input tax credit is at risk, then use draft_all_gst_chasers to ' +
+    'draft the chaser emails. Do not run the cash reconciliation or the month-close check.'},
+  close: {steps:8, label:'Tie out the month', goal:
+    'Check the three-way month close: every order from operations through the invoice ledger to ' +
+    'the bank. ' + CONTEXT + ' Run the close check first, then report what is closed, what is ' +
+    'partial, what is orphaned, and any bank credit nothing explains. Do not run the cash ' +
+    'reconciliation or the GST check.'}
+};
 
-        UI.btnRefresh.addEventListener('click', async () => {
-            clearError();
-            await fetchData();
-        });
+async function runAgent(btn, key){
+  const cfg = GOALS[key] || GOALS.full;
+  const buttons = document.querySelectorAll('#run,.task');
+  buttons.forEach(b => b.disabled = true);
+  const original = btn.textContent;
+  btn.innerHTML = '<span class="spinner"></span>Working…';
+  clearFail();
+  try{
+    const a = await post('/agent/run', {max_steps: cfg.steps, goal: cfg.goal});
+    renderAgent(a);
+    if(!a.completed && a.summary) fail(a.summary);
+    await loadAll();
+    document.getElementById('steps').scrollIntoView({behavior:'smooth', block:'start'});
+  }catch(e){ fail(e.message); }
+  finally{ buttons.forEach(b => b.disabled = false); btn.textContent = original; }
+}
 
-        // Initialize
-        document.addEventListener('DOMContentLoaded', async () => {
-            await fetchData();
-        });
+$('run').addEventListener('click', ev => runAgent(ev.currentTarget, 'full'));
+document.querySelectorAll('.task').forEach(b =>
+  b.addEventListener('click', ev => runAgent(ev.currentTarget, ev.currentTarget.dataset.goal)));
 
-    </script>
+$('refresh').addEventListener('click', loadAll);
+
+$('reset').addEventListener('click', async () => {
+  try{ await post('/admin/reset'); await loadAll(); }catch(e){ fail(e.message); }
+});
+
+$('sendAll').addEventListener('click', async () => {
+  try{ await post('/outbox/send-all'); renderOutbox(await get('/outbox')); }
+  catch(e){ fail(e.message); }
+});
+
+$('draftAll').addEventListener('click', async ev => {
+  const b = ev.currentTarget; b.disabled = true; b.textContent = 'Drafting…';
+  try{
+    const r = await post('/gst/draft-all');
+    if(r.ok === false) fail(r.error || 'Could not draft. Ask the agent to check GST first.');
+    renderOutbox(await get('/outbox'));
+  }catch(e){ fail(e.message); }
+  finally{ b.disabled = false; b.textContent = 'Draft all mails'; }
+});
+
+document.addEventListener('click', async ev => {
+  const ap = ev.target.closest('[data-approve]');
+  if(ap){
+    const id = ap.getAttribute('data-approve');
+    ap.disabled = true; ap.textContent = 'Saving…';
+    try{
+      const r = await post('/cases/' + encodeURIComponent(id) + '/decision',
+                           {action:'approve', actor_id:'finance_user_01'});
+      const note = $('learn-' + id);
+      if(note && r.learned_rule_id){
+        note.innerHTML = 'Learned. Press <b>Run the whole close</b> again — it will resolve this pattern itself, ' +
+                         'and the case will be tagged “from memory”.';
+      }
+      await loadAll();
+      if(r.learned_rule_id) document.getElementById('rules').scrollIntoView({behavior:'smooth', block:'center'});
+    }catch(e){ fail(e.message); ap.disabled = false; ap.textContent = 'Approve'; }
+  }
+  const dr = ev.target.closest('[data-draft]');
+  if(dr){
+    const inv = dr.getAttribute('data-draft');
+    dr.disabled = true; dr.textContent = 'Drafting…';
+    try{
+      const r = await post('/gst/draft/' + encodeURIComponent(inv));
+      if(r.ok === false || r.detail) fail(r.error || r.detail);
+      renderOutbox(await get('/outbox'));
+      dr.textContent = 'Drafted';
+      document.getElementById('drafts').scrollIntoView({behavior:'smooth', block:'center'});
+    }catch(e){ fail(e.message); dr.disabled = false; dr.textContent = 'Draft mail'; }
+  }
+
+  const sd = ev.target.closest('[data-send]');
+  if(sd){
+    const id = sd.getAttribute('data-send');
+    sd.disabled = true; sd.textContent = 'Sending…';
+    try{ await post('/outbox/' + id + '/send'); renderOutbox(await get('/outbox')); }
+    catch(e){ fail(e.message); sd.disabled = false; sd.textContent = 'Send'; }
+  }
+});
+
+document.addEventListener('DOMContentLoaded', loadAll);
+</script>
 </body>
 </html>
